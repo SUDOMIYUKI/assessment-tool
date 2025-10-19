@@ -886,19 +886,27 @@ class SmartInputForm(tk.Frame):
         
         try:
             # Excelファイル生成
-            self.generate_excel_file(interview_data, assessment_data)
+            excel_path = self.generate_excel_file(interview_data, assessment_data)
             
             # 報告書内容をクリップボードにコピー
             self.copy_report_to_clipboard(interview_data, assessment_data)
             
             # 成功メッセージ
-            messagebox.showinfo(
-                "完成！",
-                "✅ アセスメントシートと報告書が完成しました！\n\n"
-                "📁 Excelファイル: output/フォルダに保存されました\n"
-                "📋 報告書内容: クリップボードにコピーされました\n\n"
-                "報告書に貼り付けてご利用ください。"
-            )
+            if excel_path:
+                messagebox.showinfo(
+                    "完成！",
+                    "✅ アセスメントシートと報告書が完成しました！\n\n"
+                    f"📁 Excelファイル: {excel_path}\n"
+                    "📋 報告書内容: クリップボードにコピーされました\n\n"
+                    "報告書に貼り付けてご利用ください。"
+                )
+            else:
+                messagebox.showinfo(
+                    "完成！",
+                    "✅ 報告書が完成しました！\n\n"
+                    "📋 報告書内容: クリップボードにコピーされました\n\n"
+                    "報告書に貼り付けてご利用ください。"
+                )
             
         except Exception as e:
             messagebox.showerror(
@@ -916,21 +924,46 @@ class SmartInputForm(tk.Frame):
         try:
             from src.excel.assessment_writer import AssessmentWriter
             
-            # 出力ディレクトリの作成
-            output_dir = Path("output")
-            output_dir.mkdir(exist_ok=True)
+            # テンプレートファイルを選択
+            template_path = filedialog.askopenfilename(
+                title="アセスメントシートのテンプレートを選択してください",
+                filetypes=[
+                    ("Excelファイル", "*.xlsx"),
+                    ("すべてのファイル", "*.*")
+                ],
+                initialdir=str(Path.cwd() / "templates")
+            )
             
-            # ファイル名の生成
+            if not template_path:
+                messagebox.showwarning("警告", "テンプレートファイルが選択されませんでした。")
+                return
+            
+            # 保存場所とファイル名を選択
             child_name = interview_data.get('児童氏名', '未記録')
             date_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"アセスメントシート_{child_name}_{date_str}.xlsx"
-            output_path = output_dir / filename
+            default_filename = f"アセスメントシート_{child_name}_{date_str}.xlsx"
+            
+            output_path = filedialog.asksaveasfilename(
+                title="アセスメントシートの保存場所を選択してください",
+                defaultextension=".xlsx",
+                filetypes=[
+                    ("Excelファイル", "*.xlsx"),
+                    ("すべてのファイル", "*.*")
+                ],
+                initialvalue=default_filename,
+                initialdir=str(Path.home() / "Desktop")
+            )
+            
+            if not output_path:
+                messagebox.showwarning("警告", "保存場所が選択されませんでした。")
+                return
             
             # Excelファイル生成
-            writer = AssessmentWriter()
-            writer.create_assessment_file(interview_data, assessment_data, str(output_path))
+            writer = AssessmentWriter(str(template_path))
+            writer.create_assessment_file(interview_data, assessment_data, output_path)
             
             print(f"✅ Excelファイル生成完了: {output_path}")
+            return output_path
             
         except Exception as e:
             print(f"❌ Excelファイル生成エラー: {str(e)}")
