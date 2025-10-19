@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext, filedialog
 from datetime import datetime
 import pyperclip
 from pathlib import Path
@@ -1123,7 +1123,7 @@ class SmartInputForm(tk.Frame):
             '面談場所': '未記録',
             '通院状況': {},
             '支援への希望': {
-                '希望の曜日': self.preferred_day_entry.get().strip(),
+                '希望の曜日': self.get_selected_days(),
                 '希望の時間帯': self.preferred_time_entry.get().strip(),
                 '希望の場所': self.preferred_location_entry.get().strip(),
                 '希望の支援員': self.preferred_supporter_entry.get().strip(),
@@ -1144,6 +1144,14 @@ class SmartInputForm(tk.Frame):
             data['通院状況'] = {'通院あり': False}
         
         return data
+    
+    def get_selected_days(self):
+        """選択された曜日を取得"""
+        selected_days = []
+        for day, var in self.preferred_days.items():
+            if var.get():
+                selected_days.append(day)
+        return '・'.join(selected_days) if selected_days else ''
     
     def generate_assessment_data(self):
         """アセスメントデータを生成"""
