@@ -434,7 +434,7 @@ class MainApplication(tk.Tk):
 {assessment_data['short_term_plan'].get('ニーズ_保護者', '')}
 
 【希望する進路】
-{assessment_data['future_path']['type']}：{assessment_data['future_path']['detail']}
+{assessment_data.get('future_path', {}).get('type', '未記録')}：{assessment_data.get('future_path', {}).get('detail', '未記録')}
 
 【本人情報】
 ・{interview_data['学校名']} {interview_data['学年']}年生
