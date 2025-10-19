@@ -1,6 +1,71 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 from datetime import datetime
+import pyperclip
+from pathlib import Path
+
+class PlaceholderCombobox(ttk.Combobox):
+    """プレースホルダー機能付きComboboxウィジェット"""
+    def __init__(self, parent, placeholder="", options=None, **kwargs):
+        # Comboboxの初期化
+        super().__init__(parent, **kwargs)
+        self.placeholder = placeholder
+        self.options = options or []
+        self.placeholder_color = "gray"
+        self.normal_color = "black"
+        self.is_placeholder = True
+        
+        # 候補を設定
+        if self.options:
+            self['values'] = self.options
+        
+        # プレースホルダーテキストを表示
+        self.set(placeholder)
+        self.config(foreground=self.placeholder_color)
+        
+        # イベントバインド
+        self.bind("<FocusIn>", self._on_focus_in)
+        self.bind("<FocusOut>", self._on_focus_out)
+        self.bind("<KeyPress>", self._on_key_press)
+        self.bind("<<ComboboxSelected>>", self._on_selection_changed)
+    
+    def _on_focus_in(self, event):
+        if self.is_placeholder:
+            self.delete(0, tk.END)
+            self.config(foreground=self.normal_color)
+            self.is_placeholder = False
+    
+    def _on_focus_out(self, event):
+        if not self.get().strip() and self.placeholder:
+            self.set(self.placeholder)
+            self.config(foreground=self.placeholder_color)
+            self.is_placeholder = True
+    
+    def _on_key_press(self, event):
+        if self.is_placeholder:
+            self.delete(0, tk.END)
+            self.config(foreground=self.normal_color)
+            self.is_placeholder = False
+    
+    def _on_selection_changed(self, event):
+        """ドロップダウンから選択された時"""
+        self.config(foreground=self.normal_color)
+        self.is_placeholder = False
+    
+    def get(self):
+        """値を取得（プレースホルダーの場合は空文字を返す）"""
+        if self.is_placeholder:
+            return ""
+        return super().get()
+    
+    def set(self, value):
+        """値を設定"""
+        if value:
+            super().set(value)
+            self.config(foreground=self.normal_color)
+            self.is_placeholder = False
+        else:
+            self._on_focus_out(None)
 
 class SmartInputForm(tk.Frame):
     """スマート入力フォーム - 構造化された入力で即座にアセスメント完成"""
@@ -79,6 +144,38 @@ class SmartInputForm(tk.Frame):
         self.interview_date_entry.insert(0, datetime.now().strftime('%Y/%m/%d'))
         self.interview_date_entry.grid(row=row, column=3, columnspan=2, sticky="w")
         
+        row += 1
+        ttk.Label(basic_frame, text="家族構成:").grid(row=row, column=0, sticky="w", pady=5)
+        self.family_structure_entry = PlaceholderCombobox(
+            basic_frame, 
+            width=47,
+            placeholder="例：父・母・本人・妹",
+            options=[
+                "父・母・本人・妹",
+                "父・母・本人・兄",
+                "母・本人・妹",
+                "父・本人・兄・妹",
+                "母・本人"
+            ]
+        )
+        self.family_structure_entry.grid(row=row, column=1, columnspan=4, sticky="w", padx=5)
+        
+        row += 1
+        ttk.Label(basic_frame, text="本人の趣味・好きなこと:").grid(row=row, column=0, sticky="w", pady=5)
+        self.hobbies_entry = PlaceholderCombobox(
+            basic_frame, 
+            width=47,
+            placeholder="例：ゲーム、YouTube視聴、イラスト",
+            options=[
+                "ゲーム、YouTube視聴、イラスト",
+                "ゲーム、アニメ、音楽",
+                "スポーツ、ゲーム、読書",
+                "イラスト、動画編集、音楽",
+                "読書、ゲーム、友達と遊ぶ"
+            ]
+        )
+        self.hobbies_entry.grid(row=row, column=1, columnspan=4, sticky="w", padx=5)
+        
         # === セクション2：登校状況 ===
         attendance_frame = ttk.LabelFrame(scrollable_frame, text="🏫 登校状況", padding=15)
         attendance_frame.pack(fill="x", padx=20, pady=10)
@@ -97,6 +194,12 @@ class SmartInputForm(tk.Frame):
         self.truancy_detail = scrolledtext.ScrolledText(attendance_frame, width=50, height=3, wrap=tk.WORD)
         self.truancy_detail.grid(row=2, column=1, columnspan=2, sticky="w", padx=5)
         
+        # マウスホイールでテキストエリア内スクロール
+        def _on_truancy_mousewheel(event):
+            self.truancy_detail.yview_scroll(int(-1*(event.delta/120)), "units")
+            return "break"
+        self.truancy_detail.bind("<MouseWheel>", _on_truancy_mousewheel)
+        
         # === セクション3：生活状況 ===
         life_frame = ttk.LabelFrame(scrollable_frame, text="🏠 生活状況", padding=15)
         life_frame.pack(fill="x", padx=20, pady=10)
@@ -113,10 +216,25 @@ class SmartInputForm(tk.Frame):
             ttk.Checkbutton(rhythm_frame, text=item, variable=var).grid(row=i//2, column=i%2, sticky="w", padx=5)
             self.rhythm_checks[item] = var
         
+        ttk.Label(life_frame, text="生活リズムの詳細:").grid(row=1, column=0, sticky="nw", pady=5)
+        self.rhythm_detail = PlaceholderCombobox(
+            life_frame, 
+            width=57,
+            placeholder="例：昼夜逆転で午後2時起床、夜中3時就寝",
+            options=[
+                "昼夜逆転で午後2時起床、夜中3時就寝",
+                "朝起きられず午前11時起床、夜中2時就寝",
+                "睡眠不足で5時間程度の睡眠",
+                "不規則な生活リズム",
+                "特に問題なし"
+            ]
+        )
+        self.rhythm_detail.grid(row=1, column=1, sticky="w", padx=5)
+        
         # 生活習慣
-        ttk.Label(life_frame, text="生活習慣の課題:").grid(row=1, column=0, sticky="nw", pady=5)
+        ttk.Label(life_frame, text="生活習慣の課題:").grid(row=2, column=0, sticky="nw", pady=5)
         habit_frame = tk.Frame(life_frame)
-        habit_frame.grid(row=1, column=1, sticky="w", padx=5)
+        habit_frame.grid(row=2, column=1, sticky="w", padx=5)
         
         self.habit_checks = {}
         habit_items = ["食事の乱れ", "運動不足", "ゲーム依存傾向", "特に問題なし"]
@@ -125,12 +243,27 @@ class SmartInputForm(tk.Frame):
             ttk.Checkbutton(habit_frame, text=item, variable=var).grid(row=i//2, column=i%2, sticky="w", padx=5)
             self.habit_checks[item] = var
         
+        ttk.Label(life_frame, text="生活習慣の詳細:").grid(row=3, column=0, sticky="nw", pady=5)
+        self.habit_detail = PlaceholderCombobox(
+            life_frame, 
+            width=57,
+            placeholder="例：1日1食、ゲームを10時間以上",
+            options=[
+                "1日1食、ゲームを10時間以上",
+                "食事の時間が不規則、運動不足",
+                "ゲーム依存、昼夜逆転",
+                "偏食、睡眠不足",
+                "特に問題なし"
+            ]
+        )
+        self.habit_detail.grid(row=3, column=1, sticky="w", padx=5)
+        
         # 引きこもり
-        ttk.Label(life_frame, text="外出状況:").grid(row=2, column=0, sticky="w", pady=5)
+        ttk.Label(life_frame, text="外出状況:").grid(row=4, column=0, sticky="w", pady=5)
         self.outing_var = tk.StringVar(value="外出する")
         outing_options = ["外出する", "コンビニ程度", "ほぼ外出しない"]
         self.outing_combo = ttk.Combobox(life_frame, textvariable=self.outing_var, values=outing_options, width=20)
-        self.outing_combo.grid(row=2, column=1, sticky="w", padx=5)
+        self.outing_combo.grid(row=4, column=1, sticky="w", padx=5)
         
         # === セクション4：学習状況 ===
         study_frame = ttk.LabelFrame(scrollable_frame, text="📚 学習状況", padding=15)
@@ -147,6 +280,21 @@ class SmartInputForm(tk.Frame):
             ttk.Checkbutton(study_issues_frame, text=item, variable=var).grid(row=i//2, column=i%2, sticky="w", padx=5)
             self.study_checks[item] = var
         
+        ttk.Label(study_frame, text="学習の詳細:").grid(row=1, column=0, sticky="nw", pady=5)
+        self.study_detail = PlaceholderCombobox(
+            study_frame, 
+            width=57,
+            placeholder="例：小学生の勉強ができておらず、板書が全くできない",
+            options=[
+                "小学生の勉強ができておらず、板書が全くできない",
+                "授業についていけず、宿題もできていない",
+                "学習習慣がなく、集中力が続かない",
+                "学習環境が整っておらず、勉強する場所がない",
+                "特に問題なし"
+            ]
+        )
+        self.study_detail.grid(row=1, column=1, sticky="w", padx=5)
+        
         # === セクション5：対人関係 ===
         social_frame = ttk.LabelFrame(scrollable_frame, text="👥 対人関係・コミュニケーション", padding=15)
         social_frame.pack(fill="x", padx=20, pady=10)
@@ -162,6 +310,21 @@ class SmartInputForm(tk.Frame):
             ttk.Checkbutton(social_issues_frame, text=item, variable=var).grid(row=i//2, column=i%2, sticky="w", padx=5)
             self.social_checks[item] = var
         
+        ttk.Label(social_frame, text="対人関係の詳細:").grid(row=1, column=0, sticky="nw", pady=5)
+        self.social_detail = PlaceholderCombobox(
+            social_frame, 
+            width=57,
+            placeholder="例：初回面談時、目線が合いにくく緊張している様子",
+            options=[
+                "初回面談時、目線が合いにくく緊張している様子",
+                "友達との関係に不安を感じている",
+                "コミュニケーションが苦手で話しかけにくい",
+                "集団行動が苦手で一人でいることが多い",
+                "特に問題なし"
+            ]
+        )
+        self.social_detail.grid(row=1, column=1, sticky="w", padx=5)
+        
         # === セクション6：発達特性 ===
         dev_frame = ttk.LabelFrame(scrollable_frame, text="🧠 発達特性・医療情報", padding=15)
         dev_frame.pack(fill="x", padx=20, pady=10)
@@ -170,7 +333,18 @@ class SmartInputForm(tk.Frame):
         ttk.Checkbutton(dev_frame, text="発達特性または発達課題あり", variable=self.dev_check_var).grid(row=0, column=0, sticky="w", pady=5)
         
         ttk.Label(dev_frame, text="詳細:").grid(row=1, column=0, sticky="w", pady=5)
-        self.dev_detail = ttk.Entry(dev_frame, width=50)
+        self.dev_detail = PlaceholderCombobox(
+            dev_frame, 
+            width=47,
+            placeholder="例：注意散漫、集中力不足",
+            options=[
+                "注意散漫、集中力不足",
+                "コミュニケーションの困難",
+                "学習の遅れ、理解の困難",
+                "感覚過敏、感覚鈍麻",
+                "その他"
+            ]
+        )
         self.dev_detail.grid(row=1, column=1, sticky="w", padx=5)
         
         self.medical_check_var = tk.BooleanVar(value=False)
@@ -187,12 +361,79 @@ class SmartInputForm(tk.Frame):
         self.medical_detail_frame.grid_remove()
         
         ttk.Label(self.medical_detail_frame, text="病院名:").grid(row=0, column=0, sticky="w", pady=3)
-        self.hospital_entry = ttk.Entry(self.medical_detail_frame, width=30)
+        self.hospital_entry = PlaceholderCombobox(
+            self.medical_detail_frame, 
+            width=27,
+            placeholder="例：○○病院",
+            options=[
+                "○○病院",
+                "○○クリニック",
+                "○○メンタルクリニック",
+                "○○小児科",
+                "その他"
+            ]
+        )
         self.hospital_entry.grid(row=0, column=1, sticky="w", padx=5)
         
+        ttk.Label(self.medical_detail_frame, text="頻度:").grid(row=0, column=2, sticky="w", padx=(20, 5))
+        self.frequency_entry = PlaceholderCombobox(
+            self.medical_detail_frame, 
+            width=12,
+            placeholder="例：月1回",
+            options=[
+                "月1回",
+                "月2回",
+                "週1回",
+                "隔週1回",
+                "不定期"
+            ]
+        )
+        self.frequency_entry.grid(row=0, column=3, sticky="w", padx=5)
+        
         ttk.Label(self.medical_detail_frame, text="診断名:").grid(row=1, column=0, sticky="w", pady=3)
-        self.diagnosis_entry = ttk.Entry(self.medical_detail_frame, width=30)
+        self.diagnosis_entry = PlaceholderCombobox(
+            self.medical_detail_frame, 
+            width=27,
+            placeholder="例：ADHD",
+            options=[
+                "ADHD",
+                "ASD",
+                "LD",
+                "うつ病",
+                "その他"
+            ]
+        )
         self.diagnosis_entry.grid(row=1, column=1, sticky="w", padx=5)
+        
+        ttk.Label(self.medical_detail_frame, text="投薬治療:").grid(row=2, column=0, sticky="w", pady=3)
+        self.medication_entry = PlaceholderCombobox(
+            self.medical_detail_frame, 
+            width=27,
+            placeholder="例：なし / 薬名",
+            options=[
+                "なし",
+                "コンサータ",
+                "ストラテラ",
+                "リタリン",
+                "その他"
+            ]
+        )
+        self.medication_entry.grid(row=2, column=1, sticky="w", padx=5)
+        
+        ttk.Label(self.medical_detail_frame, text="手帳:").grid(row=2, column=2, sticky="w", padx=(20, 5))
+        self.handbook_entry = PlaceholderCombobox(
+            self.medical_detail_frame, 
+            width=12,
+            placeholder="例：なし / 種類",
+            options=[
+                "なし",
+                "療育手帳B1",
+                "療育手帳B2",
+                "精神障害者手帳",
+                "その他"
+            ]
+        )
+        self.handbook_entry.grid(row=2, column=3, sticky="w", padx=5)
         
         # === セクション7：家庭環境 ===
         family_frame = ttk.LabelFrame(scrollable_frame, text="👨‍👩‍👧‍👦 家庭環境", padding=15)
@@ -208,37 +449,305 @@ class SmartInputForm(tk.Frame):
         family_issues_frame.grid(row=1, column=1, columnspan=2, sticky="w", padx=5)
         
         self.family_checks = {}
-        family_items = ["経済的困難", "家族関係の課題", "他の世帯員の問題", "特に問題なし"]
+        family_items = ["経済的困難", "家族関係の課題", "他の世帯員の問題", "虐待", "その他", "特に問題なし"]
         for i, item in enumerate(family_items):
             var = tk.BooleanVar()
             ttk.Checkbutton(family_issues_frame, text=item, variable=var).grid(row=i//2, column=i%2, sticky="w", padx=5)
             self.family_checks[item] = var
         
-        # === セクション8：本人・保護者のニーズ ===
-        needs_frame = ttk.LabelFrame(scrollable_frame, text="🎯 ニーズ・目標", padding=15)
+        ttk.Label(family_frame, text="家庭環境の詳細:").grid(row=2, column=0, sticky="nw", pady=5)
+        self.family_detail = PlaceholderCombobox(
+            family_frame, 
+            width=57,
+            placeholder="例：弟が療育手帳B2、家庭内で暴言・暴力、父親との関係性が悪い",
+            options=[
+                "弟が療育手帳B2、家庭内で暴言・暴力、父親との関係性が悪い",
+                "経済的困難で生活が苦しい",
+                "家族関係が複雑で緊張状態",
+                "他の世帯員に問題があり、本人に影響",
+                "特に問題なし"
+            ]
+        )
+        self.family_detail.grid(row=2, column=1, columnspan=2, sticky="w", padx=5)
+        
+        # === セクション8：ニーズ・目標（短期・長期） ===
+        needs_frame = ttk.LabelFrame(scrollable_frame, text="🎯 ニーズ・目標・支援計画", padding=15)
         needs_frame.pack(fill="x", padx=20, pady=10)
         
-        ttk.Label(needs_frame, text="本人のニーズ:").grid(row=0, column=0, sticky="nw", pady=5)
-        self.child_needs = scrolledtext.ScrolledText(needs_frame, width=50, height=3, wrap=tk.WORD)
-        self.child_needs.grid(row=0, column=1, sticky="w", padx=5)
-        self.child_needs.insert("1.0", "例：友達と話せるようになりたい")
+        # 短期目標セクション
+        ttk.Label(needs_frame, text="<短期目標>", font=("游ゴシック", 10, "bold")).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
         
-        ttk.Label(needs_frame, text="保護者のニーズ:").grid(row=1, column=0, sticky="nw", pady=5)
-        self.guardian_needs = scrolledtext.ScrolledText(needs_frame, width=50, height=3, wrap=tk.WORD)
-        self.guardian_needs.grid(row=1, column=1, sticky="w", padx=5)
-        self.guardian_needs.insert("1.0", "例：学校に戻ってほしい")
+        # 課題
+        ttk.Label(needs_frame, text="課題:").grid(row=1, column=0, sticky="nw", pady=5)
+        self.short_term_issue = PlaceholderCombobox(
+            needs_frame, 
+            width=27,
+            placeholder="例：学習の遅れ",
+            options=[
+                "学習の遅れ",
+                "生活リズムの乱れ",
+                "対人関係の課題",
+                "家庭環境の問題",
+                "発達特性への対応"
+            ]
+        )
+        self.short_term_issue.grid(row=1, column=1, sticky="w", padx=5)
         
-        ttk.Label(needs_frame, text="希望する進路:").grid(row=2, column=0, sticky="w", pady=5)
-        self.future_path_var = tk.StringVar(value="進学")
-        ttk.Radiobutton(needs_frame, text="進学", variable=self.future_path_var, value="進学").grid(row=2, column=1, sticky="w")
-        ttk.Radiobutton(needs_frame, text="就職", variable=self.future_path_var, value="就職").grid(row=2, column=2, sticky="w")
+        # 現状
+        ttk.Label(needs_frame, text="現状:").grid(row=2, column=0, sticky="nw", pady=5)
+        self.short_term_current = PlaceholderCombobox(
+            needs_frame, 
+            width=57,
+            placeholder="例：小学生の勉強ができておらず、板書が全くできない。本人は半ば諦めている状態。",
+            options=[
+                "小学生の勉強ができておらず、板書が全くできない。本人は半ば諦めている状態。",
+                "授業についていけず、宿題もできていない。学習に対する自信を失っている。",
+                "学習習慣がなく、集中力が続かない。勉強する場所も整っていない。",
+                "学習環境が整っておらず、家族からのサポートも不足している。",
+                "特に問題はないが、学習意欲を高めたい状況。"
+            ]
+        )
+        self.short_term_current.grid(row=2, column=1, columnspan=2, sticky="w", padx=5)
         
-        ttk.Label(needs_frame, text="進路の詳細:").grid(row=3, column=0, sticky="w", pady=5)
-        self.future_path_detail = ttk.Entry(needs_frame, width=50)
-        self.future_path_detail.grid(row=3, column=1, columnspan=2, sticky="w", padx=5)
-        self.future_path_detail.insert(0, "例：高校進学を希望")
+        # ニーズ（本人・保護者）
+        ttk.Label(needs_frame, text="ニーズ（本人）:").grid(row=3, column=0, sticky="nw", pady=5)
+        self.child_needs = PlaceholderCombobox(
+            needs_frame, 
+            width=57,
+            placeholder="例：宿題など学習を進めないといけない気持ちはある",
+            options=[
+                "宿題など学習を進めないといけない気持ちはある",
+                "勉強ができるようになりたいが、どこから始めればいいかわからない",
+                "友達と同じように授業についていけるようになりたい",
+                "学習に対する自信を取り戻したい",
+                "特に学習に関するニーズはない"
+            ]
+        )
+        self.child_needs.grid(row=3, column=1, columnspan=2, sticky="w", padx=5)
         
-        # === セクション9：当日の様子（自由記述） ===
+        ttk.Label(needs_frame, text="ニーズ（保護者）:").grid(row=4, column=0, sticky="nw", pady=5)
+        self.guardian_needs = PlaceholderCombobox(
+            needs_frame, 
+            width=57,
+            placeholder="例：学習に取り組んでほしい",
+            options=[
+                "学習に取り組んでほしい",
+                "本人に合った学習方法を見つけてほしい",
+                "学習習慣を身につけてほしい",
+                "本人のペースで学習を進めてほしい",
+                "特に学習に関する要望はない"
+            ]
+        )
+        self.guardian_needs.grid(row=4, column=1, columnspan=2, sticky="w", padx=5)
+        
+        # 目標
+        ttk.Label(needs_frame, text="目標:").grid(row=5, column=0, sticky="nw", pady=5)
+        self.short_term_goal = PlaceholderCombobox(
+            needs_frame, 
+            width=57,
+            placeholder="例：本人の自己肯定感と学習意欲を高める。学習の遅れを取り戻す。",
+            options=[
+                "本人の自己肯定感と学習意欲を高める。学習の遅れを取り戻す。",
+                "学習習慣を身につけ、基礎学力を向上させる。",
+                "本人に合った学習方法を見つけ、自信を回復させる。",
+                "学習環境を整え、継続的な学習を支援する。",
+                "学習に対する前向きな姿勢を育成する。"
+            ]
+        )
+        self.short_term_goal.grid(row=5, column=1, columnspan=2, sticky="w", padx=5)
+        
+        # 具体的な方法
+        ttk.Label(needs_frame, text="具体的な方法:").grid(row=6, column=0, sticky="nw", pady=5)
+        self.short_term_method = PlaceholderCombobox(
+            needs_frame, 
+            width=57,
+            placeholder="例：本人の特性について理解を深める、本人に合った学習方法の提案、学び直しのための計画、学習の見守り",
+            options=[
+                "本人の特性について理解を深める、本人に合った学習方法の提案、学び直しのための計画、学習の見守り",
+                "学習環境の整備、家族との連携、段階的な学習計画の策定、継続的なサポート",
+                "本人の興味関心を活用した学習アプローチ、成功体験の積み重ね、自己肯定感の向上",
+                "学習支援ツールの活用、個別指導の実施、進捗の定期的な確認と調整",
+                "家族との協力体制の構築、学校との連携、本人のペースに合わせた支援"
+            ]
+        )
+        self.short_term_method.grid(row=6, column=1, columnspan=2, sticky="w", padx=5)
+        
+        # 長期目標セクション
+        ttk.Label(needs_frame, text="<本事業における達成目標>", font=("游ゴシック", 10, "bold")).grid(row=7, column=0, columnspan=3, sticky="w", pady=(20, 10))
+        
+        # 課題
+        ttk.Label(needs_frame, text="課題:").grid(row=8, column=0, sticky="nw", pady=5)
+        self.long_term_issue = PlaceholderCombobox(
+            needs_frame, 
+            width=27,
+            placeholder="例：進路について情報不足",
+            options=[
+                "進路について情報不足",
+                "将来の目標が明確でない",
+                "就職・進学の準備不足",
+                "自立に向けたスキル不足",
+                "社会性の向上が必要"
+            ]
+        )
+        self.long_term_issue.grid(row=8, column=1, sticky="w", padx=5)
+        
+        # 現状
+        ttk.Label(needs_frame, text="現状:").grid(row=9, column=0, sticky="nw", pady=5)
+        self.long_term_current = PlaceholderCombobox(
+            needs_frame, 
+            width=57,
+            placeholder="例：本人はできれば進学はしたいが、諦めてしまっている状態",
+            options=[
+                "本人はできれば進学はしたいが、諦めてしまっている状態",
+                "将来の目標が明確でなく、進路選択に迷っている状態",
+                "就職や進学に向けた準備ができておらず、不安を感じている",
+                "自立に向けたスキルが不足しており、将来に不安がある",
+                "社会性やコミュニケーション能力の向上が必要な状態"
+            ]
+        )
+        self.long_term_current.grid(row=9, column=1, columnspan=2, sticky="w", padx=5)
+        
+        # ニーズ（本人・保護者）
+        ttk.Label(needs_frame, text="ニーズ（本人）:").grid(row=10, column=0, sticky="nw", pady=5)
+        self.child_needs_long = PlaceholderCombobox(
+            needs_frame, 
+            width=57,
+            placeholder="例：できれば進学したい",
+            options=[
+                "できれば進学したい",
+                "将来の目標を明確にしたい",
+                "就職に向けた準備をしたい",
+                "自立に向けたスキルを身につけたい",
+                "社会性を向上させたい"
+            ]
+        )
+        self.child_needs_long.grid(row=10, column=1, columnspan=2, sticky="w", padx=5)
+        
+        ttk.Label(needs_frame, text="ニーズ（保護者）:").grid(row=11, column=0, sticky="nw", pady=5)
+        self.guardian_needs_long = PlaceholderCombobox(
+            needs_frame, 
+            width=57,
+            placeholder="例：本人に合った進路選択をしてほしい",
+            options=[
+                "本人に合った進路選択をしてほしい",
+                "将来の目標を一緒に考えてほしい",
+                "就職に向けた準備をサポートしてほしい",
+                "自立に向けたスキルを身につけさせてほしい",
+                "社会性を向上させてほしい"
+            ]
+        )
+        self.guardian_needs_long.grid(row=11, column=1, columnspan=2, sticky="w", padx=5)
+        
+        # 目標
+        ttk.Label(needs_frame, text="目標:").grid(row=12, column=0, sticky="nw", pady=5)
+        self.long_term_goal = PlaceholderCombobox(
+            needs_frame, 
+            width=57,
+            placeholder="例：本人に合った進路選択をする",
+            options=[
+                "本人に合った進路選択をする",
+                "将来の目標を明確にし、具体的な計画を立てる",
+                "就職に向けた準備を完了し、自立を目指す",
+                "自立に向けたスキルを身につけ、社会参加を実現する",
+                "社会性を向上させ、良好な人間関係を築く"
+            ]
+        )
+        self.long_term_goal.grid(row=12, column=1, columnspan=2, sticky="w", padx=5)
+        
+        # 具体的な方法
+        ttk.Label(needs_frame, text="具体的な方法:").grid(row=13, column=0, sticky="nw", pady=5)
+        self.long_term_method = PlaceholderCombobox(
+            needs_frame, 
+            width=57,
+            placeholder="例：本人の進学に対するニーズ聞き取り、サポートが手厚い学校などの情報提供、受験対策",
+            options=[
+                "本人の進学に対するニーズ聞き取り、サポートが手厚い学校などの情報提供、受験対策",
+                "将来の目標設定支援、職業体験の機会提供、進路相談の実施、具体的な計画策定",
+                "就職活動支援、面接練習、履歴書作成支援、職業訓練の情報提供、就職先の開拓",
+                "生活スキル訓練、コミュニケーション能力向上、社会参加活動、自立準備プログラム",
+                "社会性向上プログラム、人間関係構築支援、コミュニティ活動参加、継続的なフォローアップ"
+            ]
+        )
+        self.long_term_method.grid(row=13, column=1, columnspan=2, sticky="w", padx=5)
+        
+        # マウスホイールでテキストエリア内スクロール（ScrolledTextのみ）
+        # PlaceholderEntryに変更された項目は除外
+        
+        # === セクション9：支援への希望 ===
+        support_wishes_frame = ttk.LabelFrame(scrollable_frame, text="🎯 支援への希望", padding=15)
+        support_wishes_frame.pack(fill="x", padx=20, pady=10)
+        
+        ttk.Label(support_wishes_frame, text="希望の曜日:").grid(row=0, column=0, sticky="w", pady=5)
+        
+        # 曜日選択用のフレーム
+        day_selection_frame = tk.Frame(support_wishes_frame)
+        day_selection_frame.grid(row=0, column=1, sticky="w", padx=5)
+        
+        # 平日の曜日チェックボックス
+        self.preferred_days = {}
+        weekdays = ["月", "火", "水", "木", "金"]
+        for i, day in enumerate(weekdays):
+            var = tk.BooleanVar()
+            ttk.Checkbutton(day_selection_frame, text=day, variable=var).grid(row=0, column=i, sticky="w", padx=2)
+            self.preferred_days[day] = var
+        
+        ttk.Label(support_wishes_frame, text="希望の時間帯:").grid(row=0, column=2, sticky="w", padx=(20, 5))
+        self.preferred_time_entry = PlaceholderCombobox(
+            support_wishes_frame, 
+            width=17,
+            placeholder="例：14:00-16:00",
+            options=[
+                "14:00-16:00",
+                "10:00-12:00",
+                "13:00-15:00",
+                "15:00-17:00",
+                "16:00-18:00"
+            ]
+        )
+        self.preferred_time_entry.grid(row=0, column=3, sticky="w", padx=5)
+        
+        ttk.Label(support_wishes_frame, text="希望の場所:").grid(row=1, column=0, sticky="w", pady=5)
+        self.preferred_location_entry = PlaceholderCombobox(
+            support_wishes_frame, 
+            width=27,
+            placeholder="例：自宅、公共施設",
+            options=[
+                "自宅、公共施設",
+                "自宅のみ",
+                "公共施設のみ",
+                "学校、自宅",
+                "その他の場所"
+            ]
+        )
+        self.preferred_location_entry.grid(row=1, column=1, sticky="w", padx=5)
+        
+        ttk.Label(support_wishes_frame, text="希望の支援員:").grid(row=1, column=2, sticky="w", padx=(20, 5))
+        self.preferred_supporter_entry = PlaceholderCombobox(
+            support_wishes_frame, 
+            width=17,
+            placeholder="例：同性、年齢近い",
+            options=[
+                "同性、年齢近い",
+                "同性、年上",
+                "異性、年齢近い",
+                "年齢は問わない",
+                "特に希望なし"
+            ]
+        )
+        self.preferred_supporter_entry.grid(row=1, column=3, sticky="w", padx=5)
+        
+        ttk.Label(support_wishes_frame, text="解決したいこと:").grid(row=2, column=0, sticky="nw", pady=5)
+        self.support_goals_text = scrolledtext.ScrolledText(support_wishes_frame, width=60, height=3, wrap=tk.WORD)
+        self.support_goals_text.grid(row=2, column=1, columnspan=3, sticky="w", padx=5)
+        self.support_goals_text.insert("1.0", "例：生活リズムを整えたい、友達を作りたい")
+        
+        # マウスホイールでテキストエリア内スクロール
+        def _on_support_goals_mousewheel(event):
+            self.support_goals_text.yview_scroll(int(-1*(event.delta/120)), "units")
+            return "break"
+        self.support_goals_text.bind("<MouseWheel>", _on_support_goals_mousewheel)
+        
+        # === セクション10：当日の様子（自由記述） ===
         memo_frame = ttk.LabelFrame(scrollable_frame, text="📝 当日の様子・その他メモ", padding=15)
         memo_frame.pack(fill="both", expand=True, padx=20, pady=10)
         
@@ -257,6 +766,12 @@ class SmartInputForm(tk.Frame):
             font=("游ゴシック", 11)
         )
         self.memo_text.pack(fill="both", expand=True)
+        
+        # マウスホイールでテキストエリア内スクロール
+        def _on_memo_mousewheel(event):
+            self.memo_text.yview_scroll(int(-1*(event.delta/120)), "units")
+            return "break"
+        self.memo_text.bind("<MouseWheel>", _on_memo_mousewheel)
         
         # === ボタンエリア ===
         button_frame = tk.Frame(scrollable_frame)
@@ -286,7 +801,36 @@ class SmartInputForm(tk.Frame):
         
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        
+        # マウスホイールでスクロール
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        # すべてのウィジェットにマウスホイールバインド
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        self.bind("<MouseWheel>", _on_mousewheel)
+        scrollable_frame.bind("<MouseWheel>", _on_mousewheel)
+        
+        # すべてのフレームにマウスホイールイベントを伝播
+        frames = [basic_frame, attendance_frame, life_frame, study_frame, social_frame, 
+                 dev_frame, family_frame, needs_frame, support_wishes_frame, memo_frame, button_frame]
+        
+        for frame in frames:
+            frame.bind("<MouseWheel>", _on_mousewheel)
+            # フレーム内のすべての子ウィジェットにもバインド
+            self._bind_mousewheel_to_children(frame, _on_mousewheel)
     
+    def _bind_mousewheel_to_children(self, widget, callback):
+        """ウィジェットとその子ウィジェットすべてにマウスホイールイベントをバインド"""
+        try:
+            widget.bind("<MouseWheel>", callback)
+            # 子ウィジェットを再帰的に処理
+            for child in widget.winfo_children():
+                self._bind_mousewheel_to_children(child, callback)
+        except:
+            # バインドできないウィジェット（例：Canvas内のウィンドウ）はスキップ
+            pass
+
     def toggle_medical_fields(self):
         """通院情報の表示/非表示切り替え"""
         if self.medical_check_var.get():
@@ -340,7 +884,204 @@ class SmartInputForm(tk.Frame):
         interview_data = self.get_interview_data()
         assessment_data = self.generate_assessment_data()
         
+        try:
+            # Excelファイル生成
+            self.generate_excel_file(interview_data, assessment_data)
+            
+            # 報告書内容をクリップボードにコピー
+            self.copy_report_to_clipboard(interview_data, assessment_data)
+            
+            # 成功メッセージ
+            messagebox.showinfo(
+                "完成！",
+                "✅ アセスメントシートと報告書が完成しました！\n\n"
+                "📁 Excelファイル: output/フォルダに保存されました\n"
+                "📋 報告書内容: クリップボードにコピーされました\n\n"
+                "報告書に貼り付けてご利用ください。"
+            )
+            
+        except Exception as e:
+            messagebox.showerror(
+                "エラー",
+                f"ファイル生成中にエラーが発生しました:\n\n{str(e)}\n\n"
+                "詳細はコンソールを確認してください。"
+            )
+            print(f"❌ エラー詳細: {str(e)}")
+        
+        # 従来のコールバックも実行
         self.on_complete_callback(interview_data, assessment_data)
+    
+    def generate_excel_file(self, interview_data, assessment_data):
+        """Excelファイルを生成"""
+        try:
+            from src.excel.assessment_writer import AssessmentWriter
+            
+            # 出力ディレクトリの作成
+            output_dir = Path("output")
+            output_dir.mkdir(exist_ok=True)
+            
+            # ファイル名の生成
+            child_name = interview_data.get('児童氏名', '未記録')
+            date_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"アセスメントシート_{child_name}_{date_str}.xlsx"
+            output_path = output_dir / filename
+            
+            # Excelファイル生成
+            writer = AssessmentWriter()
+            writer.create_assessment_file(interview_data, assessment_data, str(output_path))
+            
+            print(f"✅ Excelファイル生成完了: {output_path}")
+            
+        except Exception as e:
+            print(f"❌ Excelファイル生成エラー: {str(e)}")
+            raise
+    
+    def copy_report_to_clipboard(self, interview_data, assessment_data):
+        """報告書内容をクリップボードにコピー"""
+        try:
+            report_text = self.generate_report_text(interview_data, assessment_data)
+            pyperclip.copy(report_text)
+            print("✅ 報告書内容をクリップボードにコピーしました")
+            
+        except Exception as e:
+            print(f"❌ クリップボードコピーエラー: {str(e)}")
+            raise
+    
+    def generate_report_text(self, interview_data, assessment_data):
+        """報告書テキストを生成"""
+        # 短期目標の情報を取得
+        short_term_plan = assessment_data.get('short_term_plan', {})
+        
+        # 長期目標の情報を取得
+        long_term_plan = assessment_data.get('long_term_plan', {})
+        
+        report_text = f"""【面談記録】
+
+【児童情報】
+・氏名：{interview_data.get('児童氏名', '未記録')}
+・学校：{interview_data.get('学校名', '未記録')} {interview_data.get('学年', '未記録')}年生
+・性別：{interview_data.get('性別', '未記録')}
+・家族構成：{interview_data.get('家族構成', '未記録')}
+・趣味・好きなこと：{interview_data.get('趣味・好きなこと', '未記録')}
+
+【登校状況】
+{self.format_attendance_info(assessment_data)}
+
+【生活状況】
+{self.format_life_info(assessment_data)}
+
+【学習状況】
+{self.format_study_info(assessment_data)}
+
+【対人関係】
+{self.format_social_info(assessment_data)}
+
+【発達・医療情報】
+{self.format_medical_info(interview_data, assessment_data)}
+
+【家庭環境】
+{self.format_family_info(assessment_data)}
+
+【短期目標】
+・課題：{short_term_plan.get('課題', '未記録')}
+・現状：{short_term_plan.get('現状', '未記録')}
+・ニーズ（本人）：{short_term_plan.get('ニーズ_本人', '未記録')}
+・ニーズ（保護者）：{short_term_plan.get('ニーズ_保護者', '未記録')}
+・目標：{short_term_plan.get('目標', '未記録')}
+・具体的な方法：{short_term_plan.get('具体的な方法', '未記録')}
+
+【本事業における達成目標】
+・課題：{long_term_plan.get('課題', '未記録')}
+・現状：{long_term_plan.get('現状', '未記録')}
+・ニーズ（本人）：{long_term_plan.get('ニーズ_本人', '未記録')}
+・ニーズ（保護者）：{long_term_plan.get('ニーズ_保護者', '未記録')}
+・目標：{long_term_plan.get('目標', '未記録')}
+・具体的な方法：{long_term_plan.get('具体的な方法', '未記録')}
+
+【支援への希望】
+・希望の曜日：{interview_data.get('支援への希望', {}).get('希望の曜日', '未記録')}
+・希望の時間帯：{interview_data.get('支援への希望', {}).get('希望の時間帯', '未記録')}
+・希望の場所：{interview_data.get('支援への希望', {}).get('希望の場所', '未記録')}
+・希望の支援員：{interview_data.get('支援への希望', {}).get('希望の支援員', '未記録')}
+・解決したいこと：{interview_data.get('支援への希望', {}).get('解決したいこと', '未記録')}
+
+【当日の様子・その他】
+{interview_data.get('メモ', '未記録')}
+
+【面談実施日】
+{interview_data.get('面談実施日', '未記録').strftime('%Y年%m月%d日') if isinstance(interview_data.get('面談実施日'), datetime) else '未記録'}
+"""
+        return report_text
+    
+    def format_attendance_info(self, assessment_data):
+        """登校状況の情報を整形"""
+        attendance = assessment_data.get('attendance', {})
+        if attendance.get('不登校'):
+            return f"不登校（{attendance.get('不登校期間', '期間不明')}）"
+        else:
+            return "登校している"
+    
+    def format_life_info(self, assessment_data):
+        """生活状況の情報を整形"""
+        life_info = assessment_data.get('life_situation', {})
+        info_parts = []
+        
+        if life_info.get('生活リズム_課題'):
+            info_parts.append(f"生活リズム：{', '.join(life_info.get('生活リズム_課題', []))}")
+        if life_info.get('生活習慣_課題'):
+            info_parts.append(f"生活習慣：{', '.join(life_info.get('生活習慣_課題', []))}")
+        if life_info.get('外出状況'):
+            info_parts.append(f"外出状況：{life_info.get('外出状況', '未記録')}")
+            
+        return '\n'.join(info_parts) if info_parts else "特に問題なし"
+    
+    def format_study_info(self, assessment_data):
+        """学習状況の情報を整形"""
+        study_info = assessment_data.get('study_situation', {})
+        if study_info.get('学習_課題'):
+            return f"学習課題：{', '.join(study_info.get('学習_課題', []))}"
+        else:
+            return "特に問題なし"
+    
+    def format_social_info(self, assessment_data):
+        """対人関係の情報を整形"""
+        social_info = assessment_data.get('social_situation', {})
+        if social_info.get('対人関係_課題'):
+            return f"対人関係課題：{', '.join(social_info.get('対人関係_課題', []))}"
+        else:
+            return "特に問題なし"
+    
+    def format_medical_info(self, interview_data, assessment_data):
+        """医療情報を整形"""
+        medical_info = []
+        
+        # 通院状況
+        medical_status = interview_data.get('通院状況', {})
+        if medical_status.get('通院あり'):
+            medical_info.append(f"通院あり：{medical_status.get('病院名', '未記録')}")
+            if medical_status.get('診断名'):
+                medical_info.append(f"診断：{medical_status.get('診断名', '未記録')}")
+            if medical_status.get('投薬'):
+                medical_info.append(f"投薬：{medical_status.get('投薬', '未記録')}")
+            if medical_status.get('手帳'):
+                medical_info.append(f"手帳：{medical_status.get('手帳', '未記録')}")
+        else:
+            medical_info.append("通院なし")
+        
+        # 発達特性
+        dev_info = assessment_data.get('development', {})
+        if dev_info.get('発達特性あり'):
+            medical_info.append(f"発達特性：{dev_info.get('発達特性_詳細', '未記録')}")
+        
+        return '\n'.join(medical_info) if medical_info else "特に問題なし"
+    
+    def format_family_info(self, assessment_data):
+        """家庭環境の情報を整形"""
+        family_info = assessment_data.get('family_environment', {})
+        if family_info.get('家庭環境_課題'):
+            return f"家庭環境課題：{', '.join(family_info.get('家庭環境_課題', []))}"
+        else:
+            return "特に問題なし"
     
     def validate_input(self):
         """入力チェック"""
@@ -369,6 +1110,8 @@ class SmartInputForm(tk.Frame):
             '性別': self.gender_var.get(),
             '学校名': self.school_entry.get().strip(),
             '学年': int(self.grade_spinbox.get()),
+            '家族構成': self.family_structure_entry.get().strip(),
+            '趣味・好きなこと': self.hobbies_entry.get().strip(),
             'ひとり親世帯': self.single_parent_var.get(),
             '担当支援員': self.supporter_entry.get().strip(),
             '面談実施日': datetime.strptime(
@@ -378,7 +1121,14 @@ class SmartInputForm(tk.Frame):
             'メモ': self.memo_text.get("1.0", tk.END).strip(),
             '面談時間': '未記録',
             '面談場所': '未記録',
-            '通院状況': {}
+            '通院状況': {},
+            '支援への希望': {
+                '希望の曜日': self.preferred_day_entry.get().strip(),
+                '希望の時間帯': self.preferred_time_entry.get().strip(),
+                '希望の場所': self.preferred_location_entry.get().strip(),
+                '希望の支援員': self.preferred_supporter_entry.get().strip(),
+                '解決したいこと': self.support_goals_text.get("1.0", tk.END).strip()
+            }
         }
         
         if self.medical_check_var.get():
@@ -386,8 +1136,9 @@ class SmartInputForm(tk.Frame):
                 '通院あり': True,
                 '病院名': self.hospital_entry.get().strip(),
                 '診断名': self.diagnosis_entry.get().strip(),
-                '投薬': '',
-                '頻度': ''
+                '頻度': self.frequency_entry.get().strip(),
+                '投薬': self.medication_entry.get().strip(),
+                '手帳': self.handbook_entry.get().strip()
             }
         else:
             data['通院状況'] = {'通院あり': False}
@@ -413,28 +1164,31 @@ class SmartInputForm(tk.Frame):
         
         # 生活リズム
         rhythm_items = [k for k, v in self.rhythm_checks.items() if v.get()]
+        rhythm_detail_text = self.rhythm_detail.get().strip()
         issues["生活リズム"] = {
             "該当": len(rhythm_items) > 0 and "特に問題なし" not in rhythm_items,
-            "詳細": "、".join(rhythm_items) if rhythm_items else "特に問題なし"
+            "詳細": f"、".join(rhythm_items) + (f"({rhythm_detail_text})" if rhythm_detail_text else "") if rhythm_items else "特に問題なし"
         }
         
         # 生活習慣
         habit_items = [k for k, v in self.habit_checks.items() if v.get()]
+        habit_detail_text = self.habit_detail.get().strip()
         issues["生活習慣"] = {
             "該当": len(habit_items) > 0 and "特に問題なし" not in habit_items,
-            "詳細": "、".join(habit_items) if habit_items else "特に問題なし"
+            "詳細": f"、".join(habit_items) + (f"({habit_detail_text})" if habit_detail_text else "") if habit_items else "特に問題なし"
         }
         
         # 学習
         study_items = [k for k, v in self.study_checks.items() if v.get()]
+        study_detail_text = self.study_detail.get().strip()
         issues["学習の遅れ・低学力"] = {
             "該当": any(item in study_items for item in ["学習の遅れ", "低学力"]),
-            "詳細": "、".join(study_items) if study_items else "特に問題なし"
+            "詳細": f"、".join(study_items) + (f"({study_detail_text})" if study_detail_text else "") if study_items else "特に問題なし"
         }
         
         issues["学習習慣・環境"] = {
             "該当": any(item in study_items for item in ["学習習慣なし", "学習環境なし"]),
-            "詳細": "、".join(study_items) if study_items else "特に問題なし"
+            "詳細": f"、".join(study_items) + (f"({study_detail_text})" if study_detail_text else "") if study_items else "特に問題なし"
         }
         
         # 発達特性
@@ -445,54 +1199,60 @@ class SmartInputForm(tk.Frame):
         
         # 対人関係
         social_items = [k for k, v in self.social_checks.items() if v.get()]
+        social_detail_text = self.social_detail.get().strip()
         issues["対人緊張の高さ"] = {
             "該当": "対人緊張が高い" in social_items or "友達との関わりに不安" in social_items,
-            "詳細": "、".join(social_items) if social_items else "特に問題なし"
+            "詳細": f"、".join(social_items) + (f"({social_detail_text})" if social_detail_text else "") if social_items else "特に問題なし"
         }
         
         issues["コミュニケーションに苦手意識"] = {
             "該当": "コミュニケーション苦手" in social_items,
-            "詳細": "、".join(social_items) if social_items else "特に問題なし"
+            "詳細": f"、".join(social_items) + (f"({social_detail_text})" if social_detail_text else "") if social_items else "特に問題なし"
         }
         
         # 家庭環境
         family_items = [k for k, v in self.family_checks.items() if v.get()]
+        family_detail_text = self.family_detail.get().strip()
         issues["家庭環境"] = {
             "該当": len(family_items) > 0 and "特に問題なし" not in family_items,
-            "詳細": "、".join(family_items) if family_items else "特に問題なし"
+            "詳細": f"、".join(family_items) + (f"({family_detail_text})" if family_detail_text else "") if family_items else "特に問題なし"
         }
         
-        issues["虐待"] = {"該当": False, "詳細": "該当なし"}
+        issues["虐待"] = {
+            "該当": "虐待" in family_items,
+            "詳細": f"虐待({family_detail_text})" if "虐待" in family_items and family_detail_text else "該当なし"
+        }
         issues["他の世帯員の問題"] = {
             "該当": "他の世帯員の問題" in family_items,
-            "詳細": "他の世帯員の問題" if "他の世帯員の問題" in family_items else "該当なし"
+            "詳細": f"他の世帯員の問題({family_detail_text})" if "他の世帯員の問題" in family_items and family_detail_text else "該当なし"
         }
-        issues["その他"] = {"該当": False, "詳細": ""}
+        issues["その他"] = {
+            "該当": "その他" in family_items,
+            "詳細": f"その他({family_detail_text})" if "その他" in family_items and family_detail_text else ""
+        }
         
-        # ニーズと目標
+        # 短期・長期目標の構造化
         short_term_plan = {
-            "課題": "、".join([k for k, v in issues.items() if v["該当"]])[:50],
-            "現状": self.truancy_detail.get("1.0", tk.END).strip()[:100],
-            "ニーズ_本人": self.child_needs.get("1.0", tk.END).strip(),
-            "ニーズ_保護者": self.guardian_needs.get("1.0", tk.END).strip(),
-            "目標": "段階的な支援を通じた自立",
-            "方法": "定期的な面談と個別支援"
+            "課題": self.short_term_issue.get().strip(),
+            "現状": self.short_term_current.get().strip(),
+            "ニーズ_本人": self.child_needs.get().strip(),
+            "ニーズ_保護者": self.guardian_needs.get().strip(),
+            "目標": self.short_term_goal.get().strip(),
+            "方法": self.short_term_method.get().strip()
+        }
+        
+        long_term_plan = {
+            "課題": self.long_term_issue.get().strip(),
+            "現状": self.long_term_current.get().strip(),
+            "ニーズ_本人": self.child_needs_long.get().strip(),
+            "ニーズ_保護者": self.guardian_needs_long.get().strip(),
+            "目標": self.long_term_goal.get().strip(),
+            "方法": self.long_term_method.get().strip()
         }
         
         return {
             "issues": issues,
-            "future_path": {
-                "type": self.future_path_var.get(),
-                "detail": self.future_path_detail.get()
-            },
             "short_term_plan": short_term_plan,
-            "long_term_plan": {
-                "課題": "進路実現",
-                "現状": self.future_path_detail.get(),
-                "ニーズ_本人": self.child_needs.get("1.0", tk.END).strip(),
-                "ニーズ_保護者": self.guardian_needs.get("1.0", tk.END).strip(),
-                "目標": f"{self.future_path_var.get()}を目指す",
-                "方法": "継続的な支援と進路相談"
-            },
+            "long_term_plan": long_term_plan,
             "missing_info": []
         }
