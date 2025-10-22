@@ -1,26 +1,40 @@
 import openpyxl
 from datetime import datetime
 from pathlib import Path
+import shutil
 
 class AssessmentWriter:
     def __init__(self, template_path='templates/アセスメントシート原本.xlsx'):
         self.template_path = Path(template_path)
     
     def create_assessment_file(self, interview_data, assessment_data, output_path):
+        """アセスメントシートExcelファイルを作成"""
+        
         if not self.template_path.exists():
             raise FileNotFoundError(
                 f"テンプレートファイルが見つかりません: {self.template_path}\n"
                 "templates/ディレクトリにアセスメントシート原本.xlsxを配置してください"
             )
         
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # === 重要：テンプレートをコピーしてから開く ===
+        print(f"📋 テンプレートをコピー: {self.template_path} → {output_path}")
+        shutil.copy2(str(self.template_path), str(output_path))
+        
         try:
-            wb = openpyxl.load_workbook(str(self.template_path))
+            # 書式を保持しながら読み込み
+            wb = openpyxl.load_workbook(
+                str(output_path),
+                data_only=False
+            )
+            
             # シート名を確認
             sheet_names = wb.sheetnames
-            print(f"利用可能なシート名: {sheet_names}")
+            print(f"✅ 利用可能なシート名: {sheet_names}")
             
-            # 1枚目のシートに元のテンプレート形式を維持しながらデータを入力
-            # アセスメントシートまたは類似の名前を探す
+            # アセスメントシートを探す
             target_sheet = None
             for sheet_name in sheet_names:
                 if 'アセスメント' in sheet_name or 'assessment' in sheet_name.lower():
@@ -28,260 +42,163 @@ class AssessmentWriter:
                     break
             
             if not target_sheet:
-                # 最初のシートを使用
                 target_sheet = sheet_names[0]
-                print(f"アセスメントシートが見つからないため、最初のシート '{target_sheet}' を使用します")
+                print(f"⚠️ 'アセスメントシート'が見つかりません。'{target_sheet}'を使用します")
             
             ws = wb[target_sheet]
-            print(f"1枚目のシート '{target_sheet}' にデータを入力します（元のテンプレート形式を維持）")
-            
-            # テンプレートファイルの内容をデバッグ出力
-            print(f"🔧 デバッグ: テンプレートファイルの内容を確認します")
-            for row in range(10, 20):  # 課題セクションの行を確認
-                for col in ['B', 'I']:  # 課題セクションの列を確認
-                    cell_address = f"{col}{row}"
-                    cell_value = ws[cell_address].value
-                    print(f"🔧 デバッグ: {cell_address} = '{cell_value}'")
-            
-            # 基本情報の入力
-            self._fill_basic_info(ws, interview_data)
-            
-            # 世帯の具体的な課題の入力
-            self._fill_household_issues(ws, assessment_data)
-            
-            # 希望する進路の入力
-            self._fill_future_path(ws, assessment_data, interview_data)
-            
-            # 支援計画の入力
-            self._fill_support_plans(ws, assessment_data)
+            print(f"📝 シート '{target_sheet}' にデータを入力します")
             
         except Exception as e:
             raise ValueError(f"テンプレートファイルの読み込みエラー: {str(e)}")
         
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        # === データの書き込み（書式を保持しながら） ===
+        
+        # 基本情報（Row 3-5）
+        self._write_cell_value(ws, 'C3', self._generate_support_number(interview_data['面談実施日']))
+        self._write_cell_value(ws, 'G3', interview_data.get('担当支援員', ''))
+        
+        if isinstance(interview_data['面談実施日'], datetime):
+            self._write_cell_value(ws, 'H3', interview_data['面談実施日'].strftime('%m月%d日'))
+        else:
+            self._write_cell_value(ws, 'H3', interview_data['面談実施日'])
+        
+        self._write_cell_value(ws, 'C4', interview_data.get('保護者氏名', ''))
+        self._write_cell_value(ws, 'G4', interview_data.get('児童氏名', ''))
+        self._write_cell_value(ws, 'O4', interview_data.get('性別', ''))
+        
+        self._write_cell_value(ws, 'C5', interview_data.get('学校名', ''))
+        self._write_cell_value(ws, 'I5', str(interview_data.get('学年', '')))
+        self._write_cell_value(ws, 'N5', interview_data.get('ひとり親世帯', '該当しない'))
+        
+        # 課題チェックリスト（B11セル - 大きな結合セル）
+        issues_text = self._format_issues_cell(assessment_data['issues'])
+        self._write_cell_value(ws, 'B11', issues_text)
+        
+        # 希望する進路（B18セル）
+        future_path = assessment_data.get('future_path', {})
+        if isinstance(interview_data['面談実施日'], datetime):
+            confirm_date = interview_data['面談実施日'].strftime('%Y/%m/%d')
+        else:
+            confirm_date = str(interview_data['面談実施日'])
+        
+        checkbox_進学 = "■" if future_path.get('type') == "進学" else "□"
+        checkbox_就職 = "■" if future_path.get('type') == "就職" else "□"
+        
+        path_text = f"""確認日　{confirm_date}
+{checkbox_進学}進学　　{checkbox_就職}就職
+（具体的内容）
+・{future_path.get('detail', '')}"""
+        
+        self._write_cell_value(ws, 'B18', path_text)
+        
+        # 支援計画（短期目標）Row 29-30
+        if 'short_term_plan' in assessment_data:
+            self._fill_support_plan(ws, assessment_data['short_term_plan'], start_row=29)
+        
+        # 本事業における達成目標 Row 35-36
+        if 'long_term_plan' in assessment_data:
+            self._fill_support_plan(ws, assessment_data['long_term_plan'], start_row=35)
+        
+        # 保存
         wb.save(str(output_path))
         print(f"✅ アセスメントシートを作成: {output_path}")
         
         return str(output_path)
     
-    def _fill_basic_info(self, ws, interview_data):
-        """基本情報を入力"""
-        # 支援番号（日付ベース）
-        if '面談実施日' in interview_data and interview_data['面談実施日']:
-            date_obj = interview_data['面談実施日']
-            if isinstance(date_obj, datetime):
-                support_number = date_obj.strftime('%Y%m%d')
-            else:
-                support_number = date_obj
-            ws['C3'] = support_number
+    def _write_cell_value(self, ws, cell_ref, value):
+        """
+        セルに値を書き込む（既存の書式を保持）
         
-        # 担当支援員
-        ws['G3'] = interview_data.get('担当支援員', '')
+        重要：ws[cell_ref].value = value だと書式が崩れる可能性があるため、
+        この専用メソッドを使う
+        """
+        if not value:
+            return
         
-        # 面談実施日
-        if '面談実施日' in interview_data and interview_data['面談実施日']:
-            date_obj = interview_data['面談実施日']
-            if isinstance(date_obj, datetime):
-                ws['H3'] = date_obj.strftime('%m月%d日')
-            else:
-                ws['H3'] = date_obj
+        cell = ws[cell_ref]
         
-        # 世帯主氏名（保護者氏名）
-        ws['C4'] = interview_data.get('保護者氏名', '')
+        # 既存の書式情報を保存
+        original_font = cell.font.copy() if cell.font else None
+        original_alignment = cell.alignment.copy() if cell.alignment else None
+        original_fill = cell.fill.copy() if cell.fill else None
+        original_border = cell.border.copy() if cell.border else None
+        original_number_format = cell.number_format
         
-        # 児童氏名
-        ws['G4'] = interview_data.get('児童氏名', '')
+        # 値を設定
+        cell.value = value
         
-        # 性別
-        ws['O4'] = interview_data.get('性別', '')
-        
-        # 学校名
-        ws['C5'] = interview_data.get('学校名', '')
-        
-        # 学年
-        ws['I5'] = str(interview_data.get('学年', ''))
-        
-        # ひとり親世帯
-        ws['N5'] = interview_data.get('ひとり親世帯', '該当しない')
+        # 書式を復元（値を設定すると消える場合があるため）
+        if original_font:
+            cell.font = original_font
+        if original_alignment:
+            cell.alignment = original_alignment
+        if original_fill:
+            cell.fill = original_fill
+        if original_border:
+            cell.border = original_border
+        if original_number_format:
+            cell.number_format = original_number_format
     
-    def _fill_household_issues(self, ws, assessment_data):
-        """世帯の具体的な課題を入力"""
-        issues_data = assessment_data.get('issues', {})
+    def _generate_support_number(self, date):
+        """支援番号を自動生成"""
+        if isinstance(date, datetime):
+            return date.strftime('%Y%m%d')
+        return str(date)
+    
+    def _format_issues_cell(self, issues_data):
+        """
+        課題チェックリストのセル（B11）を整形
         
-        # 各課題項目のチェックボックスと詳細を設定
-        issue_mappings = {
-            '不登校': {'row': 11, 'col': 'B'},
-            '引きこもり': {'row': 11, 'col': 'I'},
-            '生活リズム': {'row': 12, 'col': 'B'},
-            '生活習慣': {'row': 12, 'col': 'I'},
-            '学習の遅れ・低学力': {'row': 13, 'col': 'B'},
-            '学習習慣・環境': {'row': 13, 'col': 'I'},
-            '発達特性or発達課題': {'row': 14, 'col': 'B'},
-            '対人緊張の高さ': {'row': 14, 'col': 'I'},
-            'コミュニケーションに苦手意識': {'row': 15, 'col': 'B'},
-            '家庭環境': {'row': 15, 'col': 'I'},
-            '虐待': {'row': 16, 'col': 'B'},
-            'その他': {'row': 16, 'col': 'I'}
-        }
+        テンプレートのB11は大きな結合セルなので、
+        ここに全ての課題をまとめて書き込む
+        """
+        lines = []
         
-        for issue_name, mapping in issue_mappings.items():
-            if issue_name in issues_data:
-                issue_data = issues_data[issue_name]
-                checkbox = "■" if issue_data.get('該当', False) else "□"
-                detail = issue_data.get('詳細', '')
+        # 課題の順番（テンプレートに合わせる）
+        issue_order = [
+            "不登校",
+            "引きこもり", 
+            "生活リズム",
+            "生活習慣",
+            "学習の遅れ・低学力",
+            "学習習慣・環境",
+            "発達特性or発達課題",
+            "対人緊張の高さ",
+            "コミュニケーションに苦手意識",
+            "家庭環境",
+            "虐待",
+            "他の世帯員の問題",
+            "その他"
+        ]
+        
+        for key in issue_order:
+            if key in issues_data:
+                value = issues_data[key]
+                checkbox = "■" if value.get('該当', False) else "□"
+                detail = value.get('詳細', '')
                 
-                # 既存のセル内容を取得
-                cell_address = f"{mapping['col']}{mapping['row']}"
-                existing_value = ws[cell_address].value or ""
-                
-                print(f"🔧 デバッグ: {cell_address} の既存内容: '{existing_value}'")
-                print(f"🔧 デバッグ: {cell_address} の新しい内容: '{checkbox}{issue_name}({detail})'")
-                
-                # テンプレートのフォーマットを保持しながら、チェックボックスと詳細のみ更新
-                if existing_value and existing_value.strip():
-                    # 既存内容がある場合は、チェックボックスと詳細のみ更新
-                    existing_text = str(existing_value)
-                    
-                    # チェックボックス部分のみを更新（既存の詳細部分は保持）
-                    if existing_text.startswith('□') or existing_text.startswith('■'):
-                        # 既存のチェックボックスを新しいものに置換
-                        # 既存の詳細部分を抽出
-                        if '(' in existing_text and ')' in existing_text:
-                            # 既存の詳細部分を抽出
-                            start_idx = existing_text.find('(')
-                            end_idx = existing_text.rfind(')')
-                            if start_idx != -1 and end_idx != -1:
-                                existing_detail = existing_text[start_idx:end_idx+1]
-                                # チェックボックスのみを更新し、既存の詳細部分は保持
-                                new_value = f"{checkbox}{issue_name}{existing_detail}"
-                            else:
-                                # 詳細部分がない場合は、新しい詳細を追加
-                                if detail and detail.strip():
-                                    new_value = f"{checkbox}{issue_name}({detail})"
-                                else:
-                                    new_value = f"{checkbox}{issue_name}"
-                        else:
-                            # 詳細部分がない場合は、新しい詳細を追加
-                            if detail and detail.strip():
-                                new_value = f"{checkbox}{issue_name}({detail})"
-                            else:
-                                new_value = f"{checkbox}{issue_name}"
-                    else:
-                        # チェックボックスがない場合は、新しい内容を設定
-                        if detail and detail.strip():
-                            new_value = f"{checkbox}{issue_name}({detail})"
-                        else:
-                            new_value = f"{checkbox}{issue_name}"
-                    
-                    # セルに新しい値を設定
-                    ws[cell_address] = new_value
+                if key == "その他" and value.get('該当'):
+                    lines.append(f"{checkbox} {key}")
+                    if detail:
+                        lines.append(f"・{detail}")
                 else:
-                    # 既存内容がない場合は、テンプレートのフォーマットを保持しない
-                    # セルを更新しない（既存のテンプレート形式を保持）
-                    print(f"🔧 デバッグ: {cell_address} は既存内容がないため、更新をスキップします")
-                    continue
+                    if detail and detail not in ["該当なし", "特に問題なし", "不明", ""]:
+                        lines.append(f"{checkbox} {key}（{detail}）")
+                    else:
+                        lines.append(f"{checkbox} {key}")
+        
+        return "\n".join(lines)
     
-    def _fill_future_path(self, ws, assessment_data, interview_data):
-        """希望する進路を入力"""
-        future_path = assessment_data.get('future_path', {})
+    def _fill_support_plan(self, ws, plan_data, start_row):
+        """支援計画の表を埋める"""
         
-        # 確認日
-        if '面談実施日' in interview_data and interview_data['面談実施日']:
-            date_obj = interview_data['面談実施日']
-            if isinstance(date_obj, datetime):
-                confirm_date = date_obj.strftime('%Y/%m/%d')
-            else:
-                confirm_date = date_obj
-        else:
-            confirm_date = ''
+        # テンプレートのセル位置を確認（画像1-4を参考）
+        # Row 28: ヘッダー（課題、現状、ニーズ、目標、具体的な方法）
+        # Row 29-30: 短期目標のデータ
+        # Row 35-36: 長期目標のデータ
         
-        # 進学・就職のチェックボックス
-        path_type = future_path.get('type', '')
-        checkbox_進学 = "■" if path_type == "進学" else "□"
-        checkbox_就職 = "■" if path_type == "就職" else "□"
-        
-        # 具体的内容
-        detail = future_path.get('detail', '')
-        
-        # B18セルに進路情報を設定（既存内容を保持）
-        existing_value = ws['B18'].value or ""
-        
-        # 既存内容を保持しつつ、進路情報のみ更新
-        if confirm_date or detail or path_type:
-            # 進路情報を既存内容に追加
-            path_info = f"確認日　{confirm_date}　{checkbox_進学}進学　　{checkbox_就職}就職（具体的内容）・{detail}"
-            
-            # 既存内容がある場合は結合、ない場合は新規作成
-            if existing_value and existing_value.strip():
-                new_value = f"{existing_value}\n{path_info}"
-            else:
-                new_value = path_info
-            
-            ws['B18'] = new_value
-    
-    def _fill_support_plans(self, ws, assessment_data):
-        """支援計画を入力"""
-        # 短期目標（支援計画）
-        short_term_plan = assessment_data.get('short_term_plan', {})
-        self._fill_support_plan_table(ws, short_term_plan, start_row=29)
-        
-        # 長期目標（本事業における達成目標）
-        long_term_plan = assessment_data.get('long_term_plan', {})
-        self._fill_support_plan_table(ws, long_term_plan, start_row=35)
-    
-    def _fill_support_plan_table(self, ws, plan_data, start_row):
-        """支援計画テーブルを入力（既存内容を保持）"""
-        # 課題
-        existing_課題 = ws[f'B{start_row}'].value or ""
-        new_課題 = plan_data.get('課題', '')
-        if new_課題 and new_課題.strip():
-            if existing_課題 and existing_課題.strip():
-                ws[f'B{start_row}'] = f"{existing_課題}\n{new_課題}"
-            else:
-                ws[f'B{start_row}'] = new_課題
-        
-        # 現状
-        existing_現状 = ws[f'D{start_row}'].value or ""
-        new_現状 = plan_data.get('現状', '')
-        if new_現状 and new_現状.strip():
-            if existing_現状 and existing_現状.strip():
-                ws[f'D{start_row}'] = f"{existing_現状}\n{new_現状}"
-            else:
-                ws[f'D{start_row}'] = new_現状
-        
-        # ニーズ（本人）
-        existing_ニーズ_本人 = ws[f'F{start_row}'].value or ""
-        new_ニーズ_本人 = plan_data.get('ニーズ_本人', '')
-        if new_ニーズ_本人 and new_ニーズ_本人.strip():
-            if existing_ニーズ_本人 and existing_ニーズ_本人.strip():
-                ws[f'F{start_row}'] = f"{existing_ニーズ_本人}\n{new_ニーズ_本人}"
-            else:
-                ws[f'F{start_row}'] = new_ニーズ_本人
-        
-        # ニーズ（保護者）
-        existing_ニーズ_保護者 = ws[f'F{start_row + 1}'].value or ""
-        new_ニーズ_保護者 = plan_data.get('ニーズ_保護者', '')
-        if new_ニーズ_保護者 and new_ニーズ_保護者.strip():
-            if existing_ニーズ_保護者 and existing_ニーズ_保護者.strip():
-                ws[f'F{start_row + 1}'] = f"{existing_ニーズ_保護者}\n{new_ニーズ_保護者}"
-            else:
-                ws[f'F{start_row + 1}'] = new_ニーズ_保護者
-        
-        # 目標
-        existing_目標 = ws[f'J{start_row}'].value or ""
-        new_目標 = plan_data.get('目標', '')
-        if new_目標 and new_目標.strip():
-            if existing_目標 and existing_目標.strip():
-                ws[f'J{start_row}'] = f"{existing_目標}\n{new_目標}"
-            else:
-                ws[f'J{start_row}'] = new_目標
-        
-        # 具体的な方法
-        existing_方法 = ws[f'N{start_row}'].value or ""
-        new_方法 = plan_data.get('具体的な方法', '')
-        if new_方法 and new_方法.strip():
-            if existing_方法 and existing_方法.strip():
-                ws[f'N{start_row}'] = f"{existing_方法}\n{new_方法}"
-            else:
-                ws[f'N{start_row}'] = new_方法
+        self._write_cell_value(ws, f'B{start_row}', plan_data.get('現状', ''))
+        self._write_cell_value(ws, f'E{start_row}', plan_data.get('ニーズ_本人', ''))
+        self._write_cell_value(ws, f'E{start_row + 1}', plan_data.get('ニーズ_保護者', ''))
+        self._write_cell_value(ws, f'I{start_row}', plan_data.get('目標', ''))
+        self._write_cell_value(ws, f'M{start_row}', plan_data.get('方法', ''))
