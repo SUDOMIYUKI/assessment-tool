@@ -419,6 +419,11 @@ class MainApplication(tk.Tk):
 ◎当日の様子
 {interview_data['メモ']}
 
+【本人情報】
+・{interview_data['学校名']} {interview_data['学年']}年生
+・性別：{interview_data['性別']}
+・通院状況：{'あり' if interview_data['通院状況'].get('通院あり') else 'なし'}
+
 【近況】
 ・登校状況：{assessment_data['issues'].get('不登校', {}).get('詳細', '不明')}
 ・生活リズム：{assessment_data['issues'].get('生活リズム', {}).get('詳細', '不明')}
@@ -435,11 +440,6 @@ class MainApplication(tk.Tk):
 
 【希望する進路】
 {assessment_data.get('future_path', {}).get('type', '未記録')}：{assessment_data.get('future_path', {}).get('detail', '未記録')}
-
-【本人情報】
-・{interview_data['学校名']} {interview_data['学年']}年生
-・性別：{interview_data['性別']}
-・通院状況：{'あり' if interview_data['通院状況'].get('通院あり') else 'なし'}
 
 【次回の予定】
 （次回面談日時を記入）
