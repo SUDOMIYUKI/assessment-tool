@@ -716,11 +716,11 @@ class SmartInputForm(tk.Frame):
         self.preferred_location_entry = PlaceholderCombobox(
             support_wishes_frame, 
             width=27,
-            placeholder="例：自宅、公共施設",
+            placeholder="例：自宅、区役所",
             options=[
-                "自宅、公共施設",
+                "自宅、区役所",
                 "自宅のみ",
-                "公共施設のみ",
+                "区役所のみ",
                 "学校、自宅",
                 "その他の場所"
             ]
@@ -988,68 +988,82 @@ class SmartInputForm(tk.Frame):
     
     def generate_report_text(self, interview_data, assessment_data):
         """報告書テキストを生成"""
+        print("🔧 デバッグ: generate_report_text が呼び出されました")
+        
         # 短期目標の情報を取得
         short_term_plan = assessment_data.get('short_term_plan', {})
         
         # 長期目標の情報を取得
         long_term_plan = assessment_data.get('long_term_plan', {})
         
-        report_text = f"""【面談記録】
-
-【面談内容】
-{interview_data.get('メモ', '未記録')}
-
-【本人情報】
-・氏名：{interview_data.get('児童氏名', '未記録')}
-・学校：{interview_data.get('学校名', '未記録')} {interview_data.get('学年', '未記録')}年生
-・性別：{interview_data.get('性別', '未記録')}
-・家族構成：{interview_data.get('家族構成', '未記録')}
-・趣味・好きなこと：{interview_data.get('趣味・好きなこと', '未記録')}
-
-【登校状況】
-{self.format_attendance_info(assessment_data)}
-
-【生活状況】
-{self.format_life_info(assessment_data)}
-
-【学習状況】
-{self.format_study_info(assessment_data)}
-
-【対人関係】
-{self.format_social_info(assessment_data)}
-
-【発達・医療情報】
-{self.format_medical_info(interview_data, assessment_data)}
-
-【家庭環境】
-{self.format_family_info(assessment_data)}
-
-【短期目標】
-・課題：{short_term_plan.get('課題', '未記録')}
-・現状：{short_term_plan.get('現状', '未記録')}
-・ニーズ（本人）：{short_term_plan.get('ニーズ_本人', '未記録')}
-・ニーズ（保護者）：{short_term_plan.get('ニーズ_保護者', '未記録')}
-・目標：{short_term_plan.get('目標', '未記録')}
-・具体的な方法：{short_term_plan.get('具体的な方法', '未記録')}
-
-【本事業における達成目標】
-・課題：{long_term_plan.get('課題', '未記録')}
-・現状：{long_term_plan.get('現状', '未記録')}
-・ニーズ（本人）：{long_term_plan.get('ニーズ_本人', '未記録')}
-・ニーズ（保護者）：{long_term_plan.get('ニーズ_保護者', '未記録')}
-・目標：{long_term_plan.get('目標', '未記録')}
-・具体的な方法：{long_term_plan.get('具体的な方法', '未記録')}
-
-【支援への希望】
-・希望の曜日：{interview_data.get('支援への希望', {}).get('希望の曜日', '未記録')}
-・希望の時間帯：{interview_data.get('支援への希望', {}).get('希望の時間帯', '未記録')}
-・希望の場所：{interview_data.get('支援への希望', {}).get('希望の場所', '未記録')}
-・希望の支援員：{interview_data.get('支援への希望', {}).get('希望の支援員', '未記録')}
-・解決したいこと：{interview_data.get('支援への希望', {}).get('解決したいこと', '未記録')}
-
-【面談実施日】
-{interview_data.get('面談実施日', '未記録').strftime('%Y年%m月%d日') if isinstance(interview_data.get('面談実施日'), datetime) else '未記録'}
-"""
+        # 報告書テキストを構築（本人情報を最初に配置）
+        report_text = "【面談記録】\n\n"
+        
+        # 面談内容
+        report_text += "【面談内容】\n"
+        report_text += f"{interview_data.get('メモ', '未記録')}\n\n"
+        
+        # 本人情報（最初に配置）
+        report_text += "【本人情報】\n"
+        report_text += f"・氏名：{interview_data.get('児童氏名', '未記録')}\n"
+        report_text += f"・学校：{interview_data.get('学校名', '未記録')} {interview_data.get('学年', '未記録')}年生\n"
+        report_text += f"・性別：{interview_data.get('性別', '未記録')}\n"
+        report_text += f"・家族構成：{interview_data.get('家族構成', '未記録')}\n"
+        report_text += f"・趣味・好きなこと：{interview_data.get('趣味・好きなこと', '未記録')}\n\n"
+        
+        # 近況
+        report_text += "【近況】\n"
+        report_text += "【登校状況】\n"
+        report_text += f"{self.format_attendance_info(assessment_data)}\n\n"
+        
+        report_text += "【生活状況】\n"
+        report_text += f"{self.format_life_info(assessment_data)}\n\n"
+        
+        report_text += "【学習状況】\n"
+        report_text += f"{self.format_study_info(assessment_data)}\n\n"
+        
+        report_text += "【対人関係】\n"
+        report_text += f"{self.format_social_info(assessment_data)}\n\n"
+        
+        report_text += "【発達・医療情報】\n"
+        report_text += f"{self.format_medical_info(interview_data, assessment_data)}\n\n"
+        
+        report_text += "【家庭環境】\n"
+        report_text += f"{self.format_family_info(assessment_data)}\n\n"
+        
+        # 短期目標
+        report_text += "【短期目標】\n"
+        report_text += f"・課題：{short_term_plan.get('課題', '未記録')}\n"
+        report_text += f"・現状：{short_term_plan.get('現状', '未記録')}\n"
+        report_text += f"・ニーズ（本人）：{short_term_plan.get('ニーズ_本人', '未記録')}\n"
+        report_text += f"・ニーズ（保護者）：{short_term_plan.get('ニーズ_保護者', '未記録')}\n"
+        report_text += f"・目標：{short_term_plan.get('目標', '未記録')}\n"
+        report_text += f"・具体的な方法：{short_term_plan.get('具体的な方法', '未記録')}\n\n"
+        
+        # 本事業における達成目標
+        report_text += "【本事業における達成目標】\n"
+        report_text += f"・課題：{long_term_plan.get('課題', '未記録')}\n"
+        report_text += f"・現状：{long_term_plan.get('現状', '未記録')}\n"
+        report_text += f"・ニーズ（本人）：{long_term_plan.get('ニーズ_本人', '未記録')}\n"
+        report_text += f"・ニーズ（保護者）：{long_term_plan.get('ニーズ_保護者', '未記録')}\n"
+        report_text += f"・目標：{long_term_plan.get('目標', '未記録')}\n"
+        report_text += f"・具体的な方法：{long_term_plan.get('具体的な方法', '未記録')}\n\n"
+        
+        # 支援への希望
+        report_text += "【支援への希望】\n"
+        report_text += f"・希望の曜日：{interview_data.get('支援への希望', {}).get('希望の曜日', '未記録')}\n"
+        report_text += f"・希望の時間帯：{interview_data.get('支援への希望', {}).get('希望の時間帯', '未記録')}\n"
+        report_text += f"・希望の場所：{interview_data.get('支援への希望', {}).get('希望の場所', '未記録')}\n"
+        report_text += f"・希望の支援員：{interview_data.get('支援への希望', {}).get('希望の支援員', '未記録')}\n"
+        report_text += f"・解決したいこと：{interview_data.get('支援への希望', {}).get('解決したいこと', '未記録')}\n\n"
+        
+        # 面談実施日
+        report_text += "【面談実施日】\n"
+        if isinstance(interview_data.get('面談実施日'), datetime):
+            report_text += f"{interview_data.get('面談実施日').strftime('%Y年%m月%d日')}\n"
+        else:
+            report_text += "未記録\n"
+        
         return report_text
     
     def format_attendance_info(self, assessment_data):
