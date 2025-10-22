@@ -19,9 +19,10 @@ class PlaceholderCombobox(ttk.Combobox):
         if self.options:
             self['values'] = self.options
         
-        # プレースホルダーテキストを表示
-        self.set(placeholder)
-        self.config(foreground=self.placeholder_color)
+        # プレースホルダーテキストを表示（setメソッドを使わず直接設定）
+        if placeholder:
+            super().set(placeholder)
+            self.config(foreground=self.placeholder_color)
         
         # イベントバインド
         self.bind("<FocusIn>", self._on_focus_in)
@@ -34,10 +35,13 @@ class PlaceholderCombobox(ttk.Combobox):
             self.delete(0, tk.END)
             self.config(foreground=self.normal_color)
             self.is_placeholder = False
+            # フォーカス取得時にテキストを全選択
+            self.selection_range(0, tk.END)
     
     def _on_focus_out(self, event):
-        if not self.get().strip() and self.placeholder:
-            self.set(self.placeholder)
+        current_value = super().get()  # プレースホルダー状態を無視して実際の値を取得
+        if not current_value.strip() and self.placeholder:
+            super().set(self.placeholder)
             self.config(foreground=self.placeholder_color)
             self.is_placeholder = True
     
@@ -60,12 +64,14 @@ class PlaceholderCombobox(ttk.Combobox):
     
     def set(self, value):
         """値を設定"""
-        if value:
+        if value and value != self.placeholder:
             super().set(value)
             self.config(foreground=self.normal_color)
             self.is_placeholder = False
-        else:
-            self._on_focus_out(None)
+        elif not value and self.placeholder:
+            super().set(self.placeholder)
+            self.config(foreground=self.placeholder_color)
+            self.is_placeholder = True
 
 class SmartInputForm(tk.Frame):
     """スマート入力フォーム - 構造化された入力で即座にアセスメント完成"""
@@ -950,7 +956,7 @@ class SmartInputForm(tk.Frame):
                     ("Excelファイル", "*.xlsx"),
                     ("すべてのファイル", "*.*")
                 ],
-                initialvalue=default_filename,
+                initialfile=default_filename,
                 initialdir=str(Path.home() / "Desktop")
             )
             
@@ -990,7 +996,10 @@ class SmartInputForm(tk.Frame):
         
         report_text = f"""【面談記録】
 
-【児童情報】
+【面談内容】
+{interview_data.get('メモ', '未記録')}
+
+【本人情報】
 ・氏名：{interview_data.get('児童氏名', '未記録')}
 ・学校：{interview_data.get('学校名', '未記録')} {interview_data.get('学年', '未記録')}年生
 ・性別：{interview_data.get('性別', '未記録')}
@@ -1037,9 +1046,6 @@ class SmartInputForm(tk.Frame):
 ・希望の場所：{interview_data.get('支援への希望', {}).get('希望の場所', '未記録')}
 ・希望の支援員：{interview_data.get('支援への希望', {}).get('希望の支援員', '未記録')}
 ・解決したいこと：{interview_data.get('支援への希望', {}).get('解決したいこと', '未記録')}
-
-【当日の様子・その他】
-{interview_data.get('メモ', '未記録')}
 
 【面談実施日】
 {interview_data.get('面談実施日', '未記録').strftime('%Y年%m月%d日') if isinstance(interview_data.get('面談実施日'), datetime) else '未記録'}
@@ -1291,9 +1297,16 @@ class SmartInputForm(tk.Frame):
             "方法": self.long_term_method.get().strip()
         }
         
+        # 希望する進路（現在は未実装のため空のデータを返す）
+        future_path = {
+            "type": "",
+            "detail": ""
+        }
+        
         return {
             "issues": issues,
             "short_term_plan": short_term_plan,
             "long_term_plan": long_term_plan,
+            "future_path": future_path,
             "missing_info": []
         }
