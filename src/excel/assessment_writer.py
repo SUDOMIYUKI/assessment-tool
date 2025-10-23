@@ -70,9 +70,8 @@ class AssessmentWriter:
         self._write_cell_value(ws, 'I5', str(interview_data.get('学年', '')))
         self._write_cell_value(ws, 'N5', interview_data.get('ひとり親世帯', '該当しない'))
         
-        # 課題チェックリスト（B11セル - 大きな結合セル）
-        issues_text = self._format_issues_cell(assessment_data['issues'])
-        self._write_cell_value(ws, 'B11', issues_text)
+        # 課題チェックリスト（各セルに個別入力）
+        self._fill_household_issues(ws, assessment_data)
         
         # 希望する進路（B18セル）
         future_path = assessment_data.get('future_path', {})
@@ -202,3 +201,80 @@ class AssessmentWriter:
         self._write_cell_value(ws, f'E{start_row + 1}', plan_data.get('ニーズ_保護者', ''))
         self._write_cell_value(ws, f'I{start_row}', plan_data.get('目標', ''))
         self._write_cell_value(ws, f'M{start_row}', plan_data.get('方法', ''))
+    
+    def _fill_household_issues(self, ws, assessment_data):
+        """世帯の具体的な課題を入力"""
+        issues_data = assessment_data.get('issues', {})
+        
+        # 各課題項目のチェックボックスと詳細を設定
+        issue_mappings = {
+            '不登校': {'row': 11, 'col': 'B'},
+            '引きこもり': {'row': 11, 'col': 'I'},
+            '生活リズム': {'row': 12, 'col': 'B'},
+            '生活習慣': {'row': 12, 'col': 'I'},
+            '学習の遅れ・低学力': {'row': 13, 'col': 'B'},
+            '学習習慣・環境': {'row': 13, 'col': 'I'},
+            '発達特性or発達課題': {'row': 14, 'col': 'B'},
+            '対人緊張の高さ': {'row': 14, 'col': 'I'},
+            'コミュニケーションに苦手意識': {'row': 15, 'col': 'B'},
+            '家庭環境': {'row': 15, 'col': 'I'},
+            '虐待': {'row': 16, 'col': 'B'},
+            'その他': {'row': 16, 'col': 'I'}
+        }
+        
+        for issue_name, mapping in issue_mappings.items():
+            if issue_name in issues_data:
+                issue_data = issues_data[issue_name]
+                checkbox = "■" if issue_data.get('該当', False) else "□"
+                detail = issue_data.get('詳細', '')
+                
+                # 既存のセル内容を取得
+                cell_address = f"{mapping['col']}{mapping['row']}"
+                existing_value = ws[cell_address].value or ""
+                
+                # テンプレートのフォーマットを保持しながら、チェックボックスと詳細のみ更新
+                if existing_value and existing_value.strip():
+                    # 既存内容がある場合は、チェックボックスと詳細のみ更新
+                    existing_text = str(existing_value)
+                    
+                    # チェックボックス部分のみを更新（既存の詳細部分は保持）
+                    if existing_text.startswith('□') or existing_text.startswith('■'):
+                        # 既存のチェックボックスを新しいものに置換
+                        # 既存の詳細部分を抽出
+                        if '(' in existing_text and ')' in existing_text:
+                            # 既存の詳細部分を抽出
+                            start_idx = existing_text.find('(')
+                            end_idx = existing_text.rfind(')')
+                            if start_idx != -1 and end_idx != -1:
+                                existing_detail = existing_text[start_idx:end_idx+1]
+                                # チェックボックスのみを更新し、既存の詳細部分は保持
+                                new_value = f"{checkbox}{issue_name}{existing_detail}"
+                            else:
+                                # 詳細部分がない場合は、新しい詳細を追加
+                                if detail and detail.strip():
+                                    new_value = f"{checkbox}{issue_name}({detail})"
+                                else:
+                                    new_value = f"{checkbox}{issue_name}"
+                        else:
+                            # 詳細部分がない場合は、新しい詳細を追加
+                            if detail and detail.strip():
+                                new_value = f"{checkbox}{issue_name}({detail})"
+                            else:
+                                new_value = f"{checkbox}{issue_name}"
+                    else:
+                        # チェックボックスがない場合は、新しい内容を設定
+                        if detail and detail.strip():
+                            new_value = f"{checkbox}{issue_name}({detail})"
+                        else:
+                            new_value = f"{checkbox}{issue_name}"
+                    
+                    # セルに新しい値を設定
+                    self._write_cell_value(ws, cell_address, new_value)
+                else:
+                    # 既存内容がない場合は、新しい内容を設定
+                    if detail and detail.strip():
+                        new_value = f"{checkbox}{issue_name}({detail})"
+                    else:
+                        new_value = f"{checkbox}{issue_name}"
+                    
+                    self._write_cell_value(ws, cell_address, new_value)
