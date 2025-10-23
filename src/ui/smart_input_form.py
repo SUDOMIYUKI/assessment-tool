@@ -728,9 +728,14 @@ class SmartInputForm(tk.Frame):
         self.preferred_location_entry.grid(row=1, column=1, sticky="w", padx=5)
         
         ttk.Label(support_wishes_frame, text="希望の支援員:").grid(row=1, column=2, sticky="w", padx=(20, 5))
+        
+        # 支援員選択用のフレーム
+        supporter_frame = tk.Frame(support_wishes_frame)
+        supporter_frame.grid(row=1, column=3, sticky="w", padx=5)
+        
         self.preferred_supporter_entry = PlaceholderCombobox(
-            support_wishes_frame, 
-            width=17,
+            supporter_frame, 
+            width=15,
             placeholder="例：同性、年齢近い",
             options=[
                 "同性、年齢近い",
@@ -740,7 +745,20 @@ class SmartInputForm(tk.Frame):
                 "特に希望なし"
             ]
         )
-        self.preferred_supporter_entry.grid(row=1, column=3, sticky="w", padx=5)
+        self.preferred_supporter_entry.pack(side="left")
+        
+        # 支援員検索ボタン
+        search_staff_btn = tk.Button(
+            supporter_frame,
+            text="🔍 検索",
+            font=("游ゴシック", 8),
+            bg="#3498db",
+            fg="white",
+            command=self.search_staff,
+            padx=8,
+            pady=2
+        )
+        search_staff_btn.pack(side="left", padx=(5, 0))
         
         ttk.Label(support_wishes_frame, text="解決したいこと:").grid(row=2, column=0, sticky="nw", pady=5)
         self.support_goals_text = scrolledtext.ScrolledText(support_wishes_frame, width=60, height=3, wrap=tk.WORD)
@@ -1323,4 +1341,41 @@ class SmartInputForm(tk.Frame):
             "long_term_plan": long_term_plan,
             "future_path": future_path,
             "missing_info": []
+        }
+    
+    def search_staff(self):
+        """支援員検索ダイアログを開く"""
+        try:
+            from src.ui.staff_selector import StaffSelectorDialog
+            
+            # 現在の支援希望データを取得
+            support_wishes = self.get_support_wishes()
+            
+            # 支援員選択ダイアログを開く
+            dialog = StaffSelectorDialog(self, support_wishes)
+            dialog.wait_window()
+            
+            # 選択された支援員がいる場合、入力フィールドに反映
+            if hasattr(dialog, 'selected_staff') and dialog.selected_staff:
+                staff = dialog.selected_staff
+                staff_info = f"{staff['name']} ({staff['age']}歳, {staff['gender']}, {staff['region']})"
+                self.preferred_supporter_entry.set(staff_info)
+                
+        except Exception as e:
+            import tkinter.messagebox as messagebox
+            messagebox.showerror("エラー", f"支援員検索中にエラーが発生しました:\n{str(e)}")
+    
+    def get_support_wishes(self):
+        """現在の支援希望データを取得"""
+        # 選択された曜日を取得
+        selected_days = [day for day, var in self.preferred_days.items() if var.get()]
+        
+        return {
+            'preferred_region': '',  # 地域は現在未実装
+            'age_range': '',  # 年齢範囲は現在未実装
+            'gender_preference': '',  # 性別希望は現在未実装
+            'preferred_day': ','.join(selected_days),
+            'preferred_time': self.preferred_time_entry.get().strip(),
+            'preferred_location': self.preferred_location_entry.get().strip(),
+            'interests': self.support_goals_text.get("1.0", tk.END).strip()
         }

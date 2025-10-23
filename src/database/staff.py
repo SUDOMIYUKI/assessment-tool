@@ -6,6 +6,7 @@ class StaffManager:
     def __init__(self, db_path='data/records.db'):
         self.db_path = Path(db_path)
         self.init_staff_table()
+        self.init_enhanced_tables()
     
     def init_staff_table(self):
         """支援員テーブルを作成"""
@@ -24,18 +25,36 @@ class StaffManager:
                 dropbox_number TEXT,
                 work_days TEXT,
                 work_hours TEXT,
+                case_district TEXT,
+                case_number TEXT,
+                case_day TEXT,
+                case_time TEXT,
+                case_frequency TEXT,
+                case_location TEXT,
                 is_active BOOLEAN DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
+        # 既存のテーブルに新しいカラムを追加（マイグレーション）
+        try:
+            cursor.execute('ALTER TABLE staff ADD COLUMN case_district TEXT')
+            cursor.execute('ALTER TABLE staff ADD COLUMN case_number TEXT')
+            cursor.execute('ALTER TABLE staff ADD COLUMN case_day TEXT')
+            cursor.execute('ALTER TABLE staff ADD COLUMN case_time TEXT')
+            cursor.execute('ALTER TABLE staff ADD COLUMN case_frequency TEXT')
+            cursor.execute('ALTER TABLE staff ADD COLUMN case_location TEXT')
+        except sqlite3.OperationalError:
+            # カラムが既に存在する場合は無視
+            pass
+        
         # サンプルデータを挿入（初回のみ）
         cursor.execute('SELECT COUNT(*) FROM staff')
         if cursor.fetchone()[0] == 0:
             sample_staff = self._get_sample_staff()
             cursor.executemany(
-                'INSERT INTO staff (name, age, gender, region, hobbies_skills, previous_job, dropbox_number, work_days, work_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO staff (name, age, gender, region, hobbies_skills, previous_job, dropbox_number, work_days, work_hours, case_district, case_number, case_day, case_time, case_frequency, case_location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 sample_staff
             )
         
@@ -46,54 +65,90 @@ class StaffManager:
         """実際の支援員データ（シフト表から詳細抽出）"""
         return [
             # 巽 - 不定期勤務、柔軟対応
-            ('巽', 35, '男性', '大阪府大阪市', '柔軟対応、コミュニケーション', '元営業職', 'ST001', '不定期', '14:00-16:00'),
+            ('巽', 35, '男性', '大阪府大阪市', '柔軟対応、コミュニケーション', '元営業職', 'ST001', '不定期', '14:00-16:00', '大阪市住之江区', 'C001', '火', '14:00-16:00', '週1回', '自宅'),
             
             # 岡本 - 火曜日午前、水木金午後
-            ('岡本', 28, '女性', '大阪府大阪市', '学校支援、区役所支援', '元教師', 'ST002', '火水木金', '11:00-18:00'),
+            ('岡本', 28, '女性', '大阪府大阪市', '学校支援、区役所支援', '元教師', 'ST002', '火水木金', '11:00-18:00', '大阪市西区', 'C002', '水', '11:00-18:00', '週1回', '区役所'),
             
             # 松内 - 全日勤務、サテライト対応
-            ('松内', 32, '男性', '大阪府大阪市', 'サテライト支援、自宅支援、区役所支援', '元公務員', 'ST003', '月火水木金', '9:00-17:30'),
+            ('松内', 32, '男性', '大阪府大阪市', 'サテライト支援、自宅支援、区役所支援', '元公務員', 'ST003', '月火水木金', '9:00-17:30', '大阪市中央区', 'C003', '木', '9:00-17:30', '週1回', 'サテライト'),
             
             # 井上爽 - 木曜日のみ、区役所・自宅支援
-            ('井上爽', 29, '女性', '大阪府大阪市', '区役所支援、自宅支援', '元事務職', 'ST004', '木', '10:30-17:30'),
+            ('井上爽', 29, '女性', '大阪府大阪市', '区役所支援、自宅支援', '元事務職', 'ST004', '木', '10:30-17:30', '大阪市東区', 'C004', '木', '10:30-17:30', '週1回', '自宅'),
             
             # 山本真美 - 月水、区役所・自宅支援
-            ('山本真美', 31, '女性', '大阪府大阪市', '区役所支援、自宅支援', '元看護師', 'ST005', '月水', '11:00-18:00'),
+            ('山本真美', 31, '女性', '大阪府大阪市', '区役所支援、自宅支援', '元看護師', 'ST005', '月水', '11:00-18:00', '大阪市北区', 'C005', '月', '11:00-18:00', '週1回', '区役所'),
             
             # 末永和久 - 月水、多様な支援形態
-            ('末永和久', 38, '男性', '大阪府大阪市', '自宅支援、施設支援、区役所支援', '元社会福祉士', 'ST006', '月水', '10:00-17:30'),
+            ('末永和久', 38, '男性', '大阪府大阪市', '自宅支援、施設支援、区役所支援', '元社会福祉士', 'ST006', '月水', '10:00-17:30', '大阪市南区', 'C006', '水', '10:00-17:30', '週1回', '施設'),
             
             # 藤原佐久夜 - 火木金、登校・区役所・自宅支援
-            ('藤原佐久夜', 26, '女性', '大阪府大阪市', '登校支援、区役所支援、自宅支援', '元教育関係', 'ST007', '火木金', '11:00-17:30'),
+            ('藤原佐久夜', 26, '女性', '大阪府大阪市', '登校支援、区役所支援、自宅支援', '元教育関係', 'ST007', '火木金', '11:00-17:30', '大阪市西成区', 'C007', '金', '11:00-17:30', '週1回', '学校'),
             
             # 井上智美 - 月火木、隔週・月1回支援
-            ('井上智美', 33, '女性', '大阪府大阪市', '隔週支援、月1回支援', '元カウンセラー', 'ST008', '月火木', '10:00-17:30'),
+            ('井上智美', 33, '女性', '大阪府大阪市', '隔週支援、月1回支援', '元カウンセラー', 'ST008', '月火木', '10:00-17:30', '大阪市阿倍野区', 'C008', '火', '10:00-17:30', '隔週', '自宅'),
             
             # 田中美由紀 - 全日勤務、自宅・学校支援
-            ('田中美由紀', 30, '女性', '大阪府大阪市', '自宅支援、学校支援', '元保育士', 'ST009', '月火水木金', '9:00-16:30'),
+            ('田中美由紀', 30, '女性', '大阪府大阪市', '自宅支援、学校支援', '元保育士', 'ST009', '月火水木金', '9:00-16:30', '大阪市天王寺区', 'C009', '月', '9:00-16:30', '週1回', '自宅'),
             
             # 平岩 - 木金、午後勤務
-            ('平岩', 36, '男性', '大阪府大阪市', '自宅支援、区役所支援', '元営業職', 'ST010', '木金', '14:00-17:30'),
+            ('平岩', 36, '男性', '大阪府大阪市', '自宅支援、区役所支援', '元営業職', 'ST010', '木金', '14:00-17:30', '大阪市福島区', 'C010', '金', '14:00-17:30', '週1回', '自宅'),
             
             # 上田 - 全日勤務、夕方中心
-            ('上田', 34, '男性', '大阪府大阪市', '学校支援、区役所支援', '元教員', 'ST011', '月火水木金', '15:30-18:30'),
+            ('上田', 34, '男性', '大阪府大阪市', '学校支援、区役所支援', '元教員', 'ST011', '月火水木金', '15:30-18:30', '大阪市此花区', 'C011', '水', '15:30-18:30', '週1回', '学校'),
             
             # 中村 - 水曜日のみ、学校支援
-            ('中村', 27, '女性', '大阪府大阪市', '学校支援', '元教育関係', 'ST012', '水', '11:30-18:00'),
+            ('中村', 27, '女性', '大阪府大阪市', '学校支援', '元教育関係', 'ST012', '水', '11:30-18:00', '大阪市港区', 'C012', '水', '11:30-18:00', '週1回', '学校'),
             
             # 喜如嘉 - 全日勤務、午後〜夕方
-            ('喜如嘉', 40, '女性', '大阪府大阪市', '区役所支援、自宅支援、施設支援', '元社会福祉士', 'ST013', '月火水木金', '13:00-19:00'),
+            ('喜如嘉', 40, '女性', '大阪府大阪市', '区役所支援、自宅支援、施設支援', '元社会福祉士', 'ST013', '月火水木金', '13:00-19:00', '大阪市大正区', 'C013', '木', '13:00-19:00', '週1回', '施設'),
         ]
     
-    def add_staff(self, name, age, gender, region, hobbies_skills=None, previous_job=None, dropbox_number=None, work_days=None, work_hours=None):
+    def add_staff(self, staff_data=None, **kwargs):
         """新しい支援員を追加"""
+        # 辞書形式のデータまたは個別引数に対応
+        if staff_data and isinstance(staff_data, dict):
+            # 辞書形式の場合
+            name = staff_data.get('name')
+            age = staff_data.get('age')
+            gender = staff_data.get('gender')
+            region = staff_data.get('region')
+            hobbies_skills = staff_data.get('hobbies_skills')
+            previous_job = staff_data.get('previous_job')
+            dropbox_number = staff_data.get('dropbox_number')
+            work_days = staff_data.get('work_days')
+            work_hours = staff_data.get('work_hours')
+            case_district = staff_data.get('case_district')
+            case_number = staff_data.get('case_number')
+            case_day = staff_data.get('case_day')
+            case_time = staff_data.get('case_time')
+            case_frequency = staff_data.get('case_frequency')
+            case_location = staff_data.get('case_location')
+        else:
+            # 個別引数の場合（後方互換性のため）
+            name = kwargs.get('name')
+            age = kwargs.get('age')
+            gender = kwargs.get('gender')
+            region = kwargs.get('region')
+            hobbies_skills = kwargs.get('hobbies_skills')
+            previous_job = kwargs.get('previous_job')
+            dropbox_number = kwargs.get('dropbox_number')
+            work_days = kwargs.get('work_days')
+            work_hours = kwargs.get('work_hours')
+            case_district = kwargs.get('case_district')
+            case_number = kwargs.get('case_number')
+            case_day = kwargs.get('case_day')
+            case_time = kwargs.get('case_time')
+            case_frequency = kwargs.get('case_frequency')
+            case_location = kwargs.get('case_location')
+        
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT INTO staff (name, age, gender, region, hobbies_skills, previous_job, dropbox_number, work_days, work_hours)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (name, age, gender, region, hobbies_skills, previous_job, dropbox_number, work_days, work_hours))
+            INSERT INTO staff (name, age, gender, region, hobbies_skills, previous_job, dropbox_number, work_days, work_hours, case_district, case_number, case_day, case_time, case_frequency, case_location)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, age, gender, region, hobbies_skills, previous_job, dropbox_number, work_days, work_hours, case_district, case_number, case_day, case_time, case_frequency, case_location))
         
         staff_id = cursor.lastrowid
         conn.commit()
@@ -138,18 +193,24 @@ class StaffManager:
         conn.close()
         return None
     
-    def update_staff(self, staff_id, **kwargs):
+    def update_staff(self, staff_id, staff_data=None, **kwargs):
         """支援員情報を更新"""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
         
         # 更新可能なフィールド
-        updatable_fields = ['name', 'age', 'gender', 'region', 'hobbies_skills', 'previous_job', 'dropbox_number', 'work_days', 'work_hours', 'is_active']
+        updatable_fields = ['name', 'age', 'gender', 'region', 'hobbies_skills', 'previous_job', 'dropbox_number', 'work_days', 'work_hours', 'case_district', 'case_number', 'case_day', 'case_time', 'case_frequency', 'case_location', 'is_active']
         
         update_parts = []
         values = []
         
-        for key, value in kwargs.items():
+        # 辞書形式のデータまたは個別引数に対応
+        if staff_data and isinstance(staff_data, dict):
+            update_data = staff_data
+        else:
+            update_data = kwargs
+        
+        for key, value in update_data.items():
             if key in updatable_fields:
                 update_parts.append(f"{key} = ?")
                 values.append(value)
@@ -168,8 +229,8 @@ class StaffManager:
         """支援員を削除（論理削除）"""
         self.update_staff(staff_id, is_active=False)
     
-    def search_matching_staff(self, preferred_time=None, preferred_region=None, age_range=None, gender_preference=None, interests=None, preferred_day=None):
-        """条件に合う支援員を検索"""
+    def search_matching_staff(self, preferred_time=None, preferred_region=None, age_range=None, gender_preference=None, interests=None, preferred_day=None, exclude_occupied_times=True):
+        """条件に合う支援員を検索（重複チェック機能付き）"""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
         
@@ -238,6 +299,17 @@ class StaffManager:
             if interest_conditions:
                 conditions.append(f"({' OR '.join(interest_conditions)})")
         
+        # 重複チェック：既にケースを持っている支援員を除外
+        if exclude_occupied_times and preferred_day and preferred_time:
+            # 指定された曜日・時間帯に既にケースを持っている支援員を除外
+            occupied_conditions = []
+            for day in preferred_day:
+                occupied_conditions.append("(case_day = ? AND case_time LIKE ?)")
+                params.extend([day, f"%{preferred_time}%"])
+            
+            if occupied_conditions:
+                conditions.append(f"NOT ({' OR '.join(occupied_conditions)})")
+        
         # クエリを組み立て
         if conditions:
             query += " AND " + " AND ".join(conditions)
@@ -296,3 +368,269 @@ class StaffManager:
             'age_stats': age_stats,
             'region_stats': region_stats
         }
+
+    def init_enhanced_tables(self):
+        """拡張テーブルを作成"""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        # エリアマスタテーブル
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS areas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                display_order INTEGER
+            )
+        ''')
+        
+        # 区マスタテーブル
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS districts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                area_id INTEGER NOT NULL,
+                display_order INTEGER,
+                FOREIGN KEY (area_id) REFERENCES areas(id)
+            )
+        ''')
+        
+        # ケーステーブル（多対多対応）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS cases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_number TEXT NOT NULL,
+                district_id INTEGER NOT NULL,
+                phone_number TEXT,
+                child_name TEXT,
+                schedule_day TEXT,
+                schedule_time TEXT,
+                location TEXT,
+                first_meeting_date DATE,
+                frequency TEXT,
+                notes TEXT,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (district_id) REFERENCES districts(id)
+            )
+        ''')
+        
+        # 支援員とケースの関連テーブル
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS staff_cases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                staff_id INTEGER NOT NULL,
+                case_id INTEGER NOT NULL,
+                assigned_date DATE DEFAULT CURRENT_DATE,
+                is_primary BOOLEAN DEFAULT 1,
+                FOREIGN KEY (staff_id) REFERENCES staff(id),
+                FOREIGN KEY (case_id) REFERENCES cases(id),
+                UNIQUE(staff_id, case_id)
+            )
+        ''')
+        
+        # 週間スケジュールテーブル
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                staff_id INTEGER NOT NULL,
+                case_id INTEGER,
+                day_of_week TEXT NOT NULL,
+                start_time TEXT NOT NULL,
+                end_time TEXT NOT NULL,
+                location TEXT,
+                schedule_type TEXT,
+                color_code TEXT,
+                notes TEXT,
+                is_active BOOLEAN DEFAULT 1,
+                FOREIGN KEY (staff_id) REFERENCES staff(id),
+                FOREIGN KEY (case_id) REFERENCES cases(id)
+            )
+        ''')
+        
+        # 初期データ投入
+        cursor.execute('SELECT COUNT(*) FROM areas')
+        if cursor.fetchone()[0] == 0:
+            # エリアデータ
+            cursor.executemany(
+                'INSERT INTO areas (name, display_order) VALUES (?, ?)',
+                [('東エリア', 1), ('南エリア', 2)]
+            )
+            
+            # 区データ
+            districts_data = [
+                # 東エリア (id=1)
+                ('城東区', 1, 1),
+                ('鶴見区', 1, 2),
+                ('天王寺区', 1, 3),
+                ('中央区', 1, 4),
+                ('浪速区', 1, 5),
+                ('生野区', 1, 6),
+                ('東成区', 1, 7),
+                # 南エリア (id=2)
+                ('阿倍野区', 2, 8),
+                ('平野区', 2, 9),
+                ('住吉区', 2, 10),
+                ('東住吉区', 2, 11),
+                ('西成区', 2, 12),
+            ]
+            cursor.executemany(
+                'INSERT INTO districts (name, area_id, display_order) VALUES (?, ?, ?)',
+                districts_data
+            )
+        
+        conn.commit()
+        conn.close()
+
+    def get_all_districts(self):
+        """全区を取得（エリア別）"""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT d.id, d.name, a.name as area_name, d.display_order
+            FROM districts d
+            JOIN areas a ON d.area_id = a.id
+            ORDER BY d.display_order
+        ''')
+        
+        columns = ['id', 'name', 'area_name', 'display_order']
+        districts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        conn.close()
+        return districts
+
+    def get_staff_with_cases(self, staff_id):
+        """支援員のケース情報を含めて取得"""
+        if not staff_id:
+            return []
+            
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        try:
+            staff_id_int = int(staff_id)
+            cursor.execute('''
+                SELECT 
+                    c.id, c.case_number, d.name as district_name,
+                    c.phone_number, c.child_name, c.schedule_day,
+                    c.schedule_time, c.location, c.first_meeting_date,
+                    c.frequency, c.notes
+                FROM cases c
+                JOIN staff_cases sc ON c.id = sc.case_id
+                JOIN districts d ON c.district_id = d.id
+                WHERE sc.staff_id = ? AND c.is_active = 1
+                ORDER BY c.schedule_day, c.schedule_time
+            ''', (staff_id_int,))
+            
+            columns = [desc[0] for desc in cursor.description]
+            cases = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        except (ValueError, TypeError) as e:
+            print(f"get_staff_with_cases エラー: staff_idが無効です - {staff_id}: {e}")
+            cases = []
+        except Exception as e:
+            print(f"get_staff_with_cases エラー: {e}")
+            cases = []
+        finally:
+            conn.close()
+        
+        return cases
+
+    def add_case_to_staff(self, staff_id, case_data):
+        """支援員にケースを追加"""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        # ケースを作成
+        cursor.execute('''
+            INSERT INTO cases 
+            (case_number, district_id, phone_number, child_name, 
+             schedule_day, schedule_time, location, first_meeting_date, 
+             frequency, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            case_data.get('case_number'),
+            case_data.get('district_id'),
+            case_data.get('phone_number'),
+            case_data.get('child_name'),
+            case_data.get('schedule_day'),
+            case_data.get('schedule_time'),
+            case_data.get('location'),
+            case_data.get('first_meeting_date'),
+            case_data.get('frequency'),
+            case_data.get('notes')
+        ))
+        
+        case_id = cursor.lastrowid
+        
+        # 支援員とケースを関連付け
+        cursor.execute('''
+            INSERT INTO staff_cases (staff_id, case_id)
+            VALUES (?, ?)
+        ''', (staff_id, case_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return case_id
+
+    def get_weekly_schedule(self):
+        """週間スケジュールを取得"""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                SELECT 
+                    s.id, s.day_of_week, s.start_time, s.end_time,
+                    s.location, s.schedule_type, s.color_code,
+                    staff.name as staff_name, c.case_number,
+                    d.name as district_name
+                FROM schedules s
+                JOIN staff ON s.staff_id = staff.id
+                LEFT JOIN cases c ON s.case_id = c.id
+                LEFT JOIN districts d ON c.district_id = d.id
+                WHERE s.is_active = 1
+                ORDER BY s.day_of_week, s.start_time
+            ''')
+            
+            columns = [desc[0] for desc in cursor.description]
+            schedules = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"get_weekly_schedule エラー: {e}")
+            # テーブルが存在しない場合は空のリストを返す
+            schedules = []
+        finally:
+            conn.close()
+        
+        return schedules
+
+    def get_staff_by_id(self, staff_id):
+        """IDで支援員を取得"""
+        if not staff_id:
+            return None
+            
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        try:
+            # staff_idを整数に変換
+            staff_id_int = int(staff_id)
+            cursor.execute('SELECT * FROM staff WHERE id = ?', (staff_id_int,))
+            columns = [description[0] for description in cursor.description]
+            row = cursor.fetchone()
+            
+            if row:
+                staff = dict(zip(columns, row))
+            else:
+                staff = None
+        except (ValueError, TypeError) as e:
+            print(f"get_staff_by_id エラー: staff_idが無効です - {staff_id}: {e}")
+            staff = None
+        except Exception as e:
+            print(f"get_staff_by_id エラー: {e}")
+            staff = None
+        finally:
+            conn.close()
+        
+        return staff
