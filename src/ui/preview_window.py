@@ -58,6 +58,18 @@ class PreviewWindow(tk.Toplevel):
         button_frame = tk.Frame(self)
         button_frame.pack(fill="x", padx=20, pady=10)
         
+        back_btn = tk.Button(
+            button_frame,
+            text="🏠 ホームに戻る",
+            font=("游ゴシック", 10, "bold"),
+            bg="#9b59b6",
+            fg="white",
+            command=self.return_home,
+            padx=20,
+            pady=8
+        )
+        back_btn.pack(side="left", padx=5)
+        
         close_btn = tk.Button(
             button_frame,
             text="閉じる",
@@ -65,7 +77,7 @@ class PreviewWindow(tk.Toplevel):
             padx=15,
             pady=8
         )
-        close_btn.pack(side="left")
+        close_btn.pack(side="right", padx=5)
     
     def create_assessment_preview(self, parent):
         canvas = tk.Canvas(parent)
@@ -310,4 +322,19 @@ class PreviewWindow(tk.Toplevel):
             "2. 「面談内容」のセルに貼り付け（Ctrl+V）\n"
             "3. 必要に応じて編集"
         )
+    
+    def return_home(self):
+        """ホーム画面に戻る"""
+        # プレビューウィンドウを閉じる
+        self.destroy()
+        
+        # 親ウィンドウのスマートフォームをクリアして、ホーム画面を表示
+        if hasattr(self.master, 'smart_form'):
+            try:
+                self.master.smart_form.destroy()
+            except:
+                pass
+        
+        # ホーム画面（モード選択画面）を再表示
+        self.master.show_mode_selection()
 
