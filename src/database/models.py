@@ -56,5 +56,5 @@ class Database:
         
         conn.commit()
         conn.close()
-        print("✅ データベースを初期化しました")
+        print("データベースを初期化しました")
 
