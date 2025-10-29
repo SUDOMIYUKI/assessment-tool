@@ -73,12 +73,27 @@ class PlaceholderCombobox(ttk.Combobox):
             self.config(foreground=self.placeholder_color)
             self.is_placeholder = True
 
-class SmartInputForm(tk.Frame):
+class SmartInputForm(tk.Toplevel):
     """スマート入力フォーム - 構造化された入力で即座にアセスメント完成"""
     
     def __init__(self, parent, on_complete_callback):
         super().__init__(parent)
         self.on_complete_callback = on_complete_callback
+        self.parent = parent
+        
+        self.title("⚡ スマート面談記録")
+        self.geometry("1000x800")
+        
+        # 中央に配置
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() // 2) - (self.winfo_width() // 2)
+        y = (self.winfo_screenheight() // 2) - (self.winfo_height() // 2)
+        self.geometry(f'+{x}+{y}')
+        
+        # モーダル設定
+        self.transient(parent)
+        self.grab_set()
+        
         self.create_widgets()
     
     def create_widgets(self):
