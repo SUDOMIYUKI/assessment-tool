@@ -10,7 +10,7 @@ class StaffManager:
     
     def init_staff_table(self):
         """支援員テーブルを作成"""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=10.0)
         cursor = conn.cursor()
         
         cursor.execute('''
@@ -371,8 +371,27 @@ class StaffManager:
 
     def init_enhanced_tables(self):
         """拡張テーブルを作成"""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=10.0)
         cursor = conn.cursor()
+        
+        # 未割り当てケース管理テーブル
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS unassigned_cases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_number TEXT NOT NULL UNIQUE,
+                district TEXT,
+                child_name TEXT,
+                child_age INTEGER,
+                child_gender TEXT,
+                preferred_day TEXT,
+                preferred_time TEXT,
+                frequency TEXT,
+                location TEXT,
+                notes TEXT,
+                status TEXT DEFAULT '未割り当て',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         
         # エリアマスタテーブル
         cursor.execute('''
@@ -604,6 +623,189 @@ class StaffManager:
             conn.close()
         
         return schedules
+    
+    # 未割り当てケース管理メソッド
+    def add_unassigned_case(self, case_data):
+        """未割り当てケースを追加（既に存在する場合は更新）"""
+        conn = sqlite3.connect(str(self.db_path), timeout=10.0)
+        cursor = conn.cursor()
+        
+        try:
+            # 既に同じケース番号が存在するかチェック
+            cursor.execute('SELECT id FROM unassigned_cases WHERE case_number = ?', (case_data.get('case_number'),))
+            existing = cursor.fetchone()
+            
+            if existing:
+                # 既存のケースを更新
+                cursor.execute('''
+                    UPDATE unassigned_cases 
+                    SET district = ?,
+                        child_name = ?,
+                        child_age = ?,
+                        child_gender = ?,
+                        preferred_day = ?,
+                        preferred_time = ?,
+                        frequency = ?,
+                        location = ?,
+                        notes = ?,
+                        status = '未割り当て'
+                    WHERE case_number = ?
+                ''', (
+                    case_data.get('district'),
+                    case_data.get('child_name'),
+                    case_data.get('child_age'),
+                    case_data.get('child_gender'),
+                    case_data.get('preferred_day'),
+                    case_data.get('preferred_time'),
+                    case_data.get('frequency'),
+                    case_data.get('location'),
+                    case_data.get('notes'),
+                    case_data.get('case_number')
+                ))
+                case_id = existing[0]
+            else:
+                # 新規ケースを追加
+                cursor.execute('''
+                    INSERT INTO unassigned_cases 
+                    (case_number, district, child_name, child_age, child_gender, 
+                     preferred_day, preferred_time, frequency, location, notes, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    case_data.get('case_number'),
+                    case_data.get('district'),
+                    case_data.get('child_name'),
+                    case_data.get('child_age'),
+                    case_data.get('child_gender'),
+                    case_data.get('preferred_day'),
+                    case_data.get('preferred_time'),
+                    case_data.get('frequency'),
+                    case_data.get('location'),
+                    case_data.get('notes'),
+                    '未割り当て'
+                ))
+                case_id = cursor.lastrowid
+            
+            conn.commit()
+        finally:
+            conn.close()
+        
+        return case_id
+    
+    def get_unassigned_cases(self):
+        """未割り当てケース一覧を取得"""
+        conn = sqlite3.connect(str(self.db_path), timeout=10.0)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                SELECT * FROM unassigned_cases 
+                WHERE status = '未割り当て'
+                ORDER BY created_at DESC
+            ''')
+            columns = [desc[0] for desc in cursor.description]
+            cases = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"get_unassigned_cases エラー: {e}")
+            cases = []
+        finally:
+            conn.close()
+        
+        return cases
+    
+    def assign_case_to_staff(self, case_id, staff_id):
+        """ケースを支援員に割り当て"""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        try:
+            # ケース情報を取得
+            cursor.execute('SELECT * FROM unassigned_cases WHERE id = ?', (case_id,))
+            case = cursor.fetchone()
+            
+            if not case:
+                raise ValueError("ケースが見つかりません")
+            
+            # 支援員にケースを追加
+            cursor.execute('''
+                INSERT INTO staff (name, age, gender, region, work_days, work_hours, 
+                                case_district, case_number, case_day, case_time, case_frequency, case_location)
+                SELECT name, age, gender, region, preferred_day, preferred_time,
+                       district, case_number, preferred_day, preferred_time, frequency, location
+                FROM unassigned_cases
+                WHERE id = ?
+            ''')
+            
+            # ケースを割り当て済みに変更
+            cursor.execute('''
+                UPDATE unassigned_cases 
+                SET status = '割り当て済み' 
+                WHERE id = ?
+            ''', (case_id,))
+            
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+    
+    def assign_unassigned_case_to_staff(self, unassigned_case_id, staff_id):
+        """未割り当てケースを支援員に割り当て"""
+        import time
+        
+        max_retries = 5
+        retry_delay = 0.2
+        
+        for attempt in range(max_retries):
+            try:
+                conn = sqlite3.connect(str(self.db_path), timeout=10.0)
+                cursor = conn.cursor()
+                
+                # 未割り当てケース情報を取得
+                cursor.execute('SELECT * FROM unassigned_cases WHERE id = ?', (unassigned_case_id,))
+                columns = [desc[0] for desc in cursor.description]
+                case = dict(zip(columns, cursor.fetchone()))
+                
+                if not case:
+                    raise ValueError("ケースが見つかりません")
+                
+                # 支援員のケース情報を更新
+                cursor.execute('''
+                    UPDATE staff 
+                    SET case_district = ?,
+                        case_number = ?,
+                        case_day = ?,
+                        case_time = ?,
+                        case_frequency = ?,
+                        case_location = ?
+                    WHERE id = ?
+                ''', (
+                    case.get('district'),
+                    case.get('case_number'),
+                    case.get('preferred_day'),
+                    case.get('preferred_time'),
+                    case.get('frequency', '未設定'),
+                    case.get('location'),
+                    staff_id
+                ))
+                
+                # ケースを割り当て済みに変更
+                cursor.execute('''
+                    UPDATE unassigned_cases 
+                    SET status = '割り当て済み' 
+                    WHERE id = ?
+                ''', (unassigned_case_id,))
+                
+                conn.commit()
+                conn.close()
+                break
+                
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e) and attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise e
 
     def get_staff_by_id(self, staff_id):
         """IDで支援員を取得"""
