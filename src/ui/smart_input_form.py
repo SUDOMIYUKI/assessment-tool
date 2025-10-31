@@ -73,6 +73,94 @@ class PlaceholderCombobox(ttk.Combobox):
             self.config(foreground=self.placeholder_color)
             self.is_placeholder = True
 
+class PlaceholderTextArea:
+    """プレースホルダー機能付きテキストエリア（複数行対応）"""
+    def __init__(self, parent, placeholder="", options=None, **kwargs):
+        self.frame = tk.Frame(parent)
+        self.placeholder = placeholder
+        self.options = options or []
+        self.placeholder_color = "gray"
+        self.normal_color = "black"
+        self.is_placeholder = True
+        
+        # テキストエリアを作成
+        self.text_widget = scrolledtext.ScrolledText(self.frame, **kwargs)
+        self.text_widget.pack(side="left", fill="both", expand=True)
+        
+        # ドロップダウンボタンを追加
+        if self.options:
+            self.combo_frame = tk.Frame(self.frame)
+            self.combo_frame.pack(side="left", padx=(5, 0))
+            self.combo = ttk.Combobox(self.combo_frame, values=self.options, width=15, state="readonly")
+            self.combo.pack(side="top", pady=(0, 5))
+            self.combo.bind("<<ComboboxSelected>>", self._on_option_selected)
+            ttk.Label(self.combo_frame, text="例から選択", font=("", 8)).pack(side="top")
+        else:
+            self.combo = None
+        
+        # プレースホルダーテキストを表示
+        if placeholder:
+            self.text_widget.insert("1.0", placeholder)
+            self.text_widget.text.config(foreground=self.placeholder_color)
+        
+        # イベントバインド
+        self.text_widget.text.bind("<FocusIn>", self._on_focus_in)
+        self.text_widget.text.bind("<FocusOut>", self._on_focus_out)
+        self.text_widget.text.bind("<KeyPress>", self._on_key_press)
+        self.text_widget.text.bind("<Button-1>", self._on_click)
+    
+    def _on_focus_in(self, event):
+        if self.is_placeholder:
+            self.text_widget.delete("1.0", tk.END)
+            self.text_widget.text.config(foreground=self.normal_color)
+            self.is_placeholder = False
+    
+    def _on_focus_out(self, event):
+        current_value = self.text_widget.get("1.0", tk.END).strip()
+        if not current_value and self.placeholder:
+            self.text_widget.insert("1.0", self.placeholder)
+            self.text_widget.text.config(foreground=self.placeholder_color)
+            self.is_placeholder = True
+    
+    def _on_key_press(self, event):
+        if self.is_placeholder:
+            self.text_widget.delete("1.0", tk.END)
+            self.text_widget.text.config(foreground=self.normal_color)
+            self.is_placeholder = False
+    
+    def _on_click(self, event):
+        if self.is_placeholder:
+            self.text_widget.delete("1.0", tk.END)
+            self.text_widget.text.config(foreground=self.normal_color)
+            self.is_placeholder = False
+    
+    def _on_option_selected(self, event):
+        """ドロップダウンから選択された時"""
+        selected = self.combo.get()
+        if selected:
+            self.text_widget.delete("1.0", tk.END)
+            self.text_widget.insert("1.0", selected)
+            self.text_widget.text.config(foreground=self.normal_color)
+            self.is_placeholder = False
+    
+    def get(self):
+        """値を取得（プレースホルダーの場合は空文字を返す）"""
+        if self.is_placeholder:
+            return ""
+        return self.text_widget.get("1.0", tk.END).strip()
+    
+    def grid(self, **kwargs):
+        """grid配置"""
+        return self.frame.grid(**kwargs)
+    
+    def pack(self, **kwargs):
+        """pack配置"""
+        return self.frame.pack(**kwargs)
+    
+    def bind(self, event, handler):
+        """イベントバインド"""
+        return self.text_widget.bind(event, handler)
+
 class SmartInputForm(tk.Toplevel):
     """スマート入力フォーム - 構造化された入力で即座にアセスメント完成"""
     
@@ -212,14 +300,27 @@ class SmartInputForm(tk.Toplevel):
         ttk.Checkbutton(attendance_frame, text="不登校に該当", variable=self.truancy_check).grid(row=1, column=1, sticky="w", padx=5)
         
         ttk.Label(attendance_frame, text="詳細・経緯:").grid(row=2, column=0, sticky="nw", pady=5)
-        self.truancy_detail = scrolledtext.ScrolledText(attendance_frame, width=50, height=3, wrap=tk.WORD)
+        self.truancy_detail = PlaceholderTextArea(
+            attendance_frame,
+            width=50,
+            height=3,
+            wrap=tk.WORD,
+            placeholder="例：転校してから不登校が始まった、友達関係の問題が原因",
+            options=[
+                "例：転校してから不登校が始まった、友達関係の問題が原因",
+                "例：いじめが原因で不登校になった",
+                "例：朝起きられず、学校に行けなくなった",
+                "例：学業不振が原因で学校に行きたくない",
+                "例：人間関係がうまくいかず、学校に行けなくなった"
+            ]
+        )
         self.truancy_detail.grid(row=2, column=1, columnspan=2, sticky="w", padx=5)
         
         # マウスホイールでテキストエリア内スクロール
         def _on_truancy_mousewheel(event):
-            self.truancy_detail.yview_scroll(int(-1*(event.delta/120)), "units")
+            self.truancy_detail.text_widget.yview_scroll(int(-1*(event.delta/120)), "units")
             return "break"
-        self.truancy_detail.bind("<MouseWheel>", _on_truancy_mousewheel)
+        self.truancy_detail.text_widget.text.bind("<MouseWheel>", _on_truancy_mousewheel)
         
         # === セクション3：生活状況 ===
         life_frame = ttk.LabelFrame(scrollable_frame, text="🏠 生活状況", padding=15)
@@ -776,15 +877,27 @@ class SmartInputForm(tk.Toplevel):
         search_staff_btn.pack(side="left", padx=(5, 0))
         
         ttk.Label(support_wishes_frame, text="解決したいこと:").grid(row=2, column=0, sticky="nw", pady=5)
-        self.support_goals_text = scrolledtext.ScrolledText(support_wishes_frame, width=60, height=3, wrap=tk.WORD)
+        self.support_goals_text = PlaceholderTextArea(
+            support_wishes_frame,
+            width=60,
+            height=3,
+            wrap=tk.WORD,
+            placeholder="例：生活リズムを整えたい、友達を作りたい",
+            options=[
+                "例：生活リズムを整えたい、友達を作りたい",
+                "例：学校に行けるようになりたい、勉強を頑張りたい",
+                "例：自信を持ちたい、自分の気持ちを伝えられるようになりたい",
+                "例：規則正しい生活を送りたい、家族関係を改善したい",
+                "例：将来の目標を見つけたい、自分らしく生きたい"
+            ]
+        )
         self.support_goals_text.grid(row=2, column=1, columnspan=3, sticky="w", padx=5)
-        self.support_goals_text.insert("1.0", "例：生活リズムを整えたい、友達を作りたい")
         
         # マウスホイールでテキストエリア内スクロール
         def _on_support_goals_mousewheel(event):
-            self.support_goals_text.yview_scroll(int(-1*(event.delta/120)), "units")
+            self.support_goals_text.text_widget.yview_scroll(int(-1*(event.delta/120)), "units")
             return "break"
-        self.support_goals_text.bind("<MouseWheel>", _on_support_goals_mousewheel)
+        self.support_goals_text.text_widget.text.bind("<MouseWheel>", _on_support_goals_mousewheel)
         
         # === セクション10：当日の様子（自由記述） ===
         memo_frame = ttk.LabelFrame(scrollable_frame, text="📝 当日の様子・その他メモ", padding=15)
