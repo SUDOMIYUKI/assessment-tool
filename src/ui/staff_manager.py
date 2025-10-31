@@ -12,6 +12,7 @@ class StaffManagerDialog(tk.Toplevel):
         self.selected_staff_id = None
         self.selected_unassigned_case_id = None
         self.selected_unassigned_case_data = None
+        self.schedule_window = None  # スケジュールウィンドウの参照を保持
         
         self.title("支援員管理")
         self.geometry("1200x700")
@@ -96,6 +97,22 @@ class StaffManagerDialog(tk.Toplevel):
         scrollbar1.pack(side="right", fill="y")
         
         self.unassigned_tree.bind('<<TreeviewSelect>>', self.on_unassigned_tree_selected)
+        
+        # エリア選択（ケース一覧の上に追加）
+        area_filter_frame = tk.Frame(left_frame)
+        area_filter_frame.pack(fill="x", pady=(5, 0))
+        
+        tk.Label(area_filter_frame, text="エリア:", font=("游ゴシック", 10)).pack(side="left", padx=5)
+        self.case_area_var = tk.StringVar(value="全て")
+        case_area_combo = ttk.Combobox(
+            area_filter_frame, 
+            textvariable=self.case_area_var,
+            values=["全て", "東エリア", "南エリア"],
+            state="readonly",
+            width=15
+        )
+        case_area_combo.pack(side="left", padx=5)
+        case_area_combo.bind('<<ComboboxSelected>>', self.refresh_case_list)
         
         # ケース詳細表示・編集エリア
         detail_frame = ttk.LabelFrame(left_frame, text="ケース詳細", padding=10)
@@ -426,7 +443,7 @@ class StaffManagerDialog(tk.Toplevel):
         freq_frame.pack(fill="x", pady=5)
         tk.Label(freq_frame, text="頻度:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
         frequency_var = tk.StringVar(value=str(self.selected_unassigned_case_data.get('frequency', '')))
-        frequency_combo = ttk.Combobox(freq_frame, textvariable=frequency_var, values=["週1回", "週2回", "月1回", "月2回", "その他"], width=27, state="readonly")
+        frequency_combo = ttk.Combobox(freq_frame, textvariable=frequency_var, values=["毎週", "隔週", "月１回", "オンライン", "不定期", "休止中"], width=27, state="readonly")
         frequency_combo.pack(side="left", padx=(10, 0))
         
         # 備考
@@ -671,6 +688,11 @@ class StaffManagerDialog(tk.Toplevel):
         self.staff_end_time_var = tk.StringVar()
         tk.Entry(work_hours_frame, textvariable=self.staff_end_time_var, width=6, font=("游ゴシック", 8)).pack(side="left")
         
+        row += 1
+        tk.Label(right_col, text="備考:", font=("游ゴシック", 9)).grid(row=row, column=0, sticky="nw", pady=2)
+        self.staff_notes_text = tk.Text(right_col, width=25, height=4, wrap=tk.WORD, font=("游ゴシック", 9))
+        self.staff_notes_text.grid(row=row, column=1, sticky="w", padx=(5, 0), pady=2)
+        
         # ボタン
         button_frame = tk.Frame(form_frame, bg="white")
         button_frame.grid(row=1, column=0, columnspan=2, pady=10, sticky="ew")
@@ -723,6 +745,22 @@ class StaffManagerDialog(tk.Toplevel):
         case_frame = ttk.LabelFrame(right_frame, text="ケース一覧", padding=5)
         case_frame.pack(fill="x", pady=(10, 0))
         
+        # エリア選択（ケース一覧の上に追加）
+        area_filter_frame = tk.Frame(case_frame)
+        area_filter_frame.pack(fill="x", pady=(0, 5))
+        
+        tk.Label(area_filter_frame, text="エリア:", font=("游ゴシック", 10)).pack(side="left", padx=5)
+        self.case_area_var = tk.StringVar(value="全て")
+        case_area_combo = ttk.Combobox(
+            area_filter_frame, 
+            textvariable=self.case_area_var,
+            values=["全て", "東エリア", "南エリア"],
+            state="readonly",
+            width=15
+        )
+        case_area_combo.pack(side="left", padx=5)
+        case_area_combo.bind('<<ComboboxSelected>>', self.refresh_case_list)
+        
         # ケース追加ボタン
         case_button_frame = tk.Frame(case_frame)
         case_button_frame.pack(fill="x", pady=(0, 5))
@@ -751,20 +789,20 @@ class StaffManagerDialog(tk.Toplevel):
             pady=3
         ).pack(side="left")
         
-        # ケース一覧テーブル
-        case_columns = ('case_number', 'district', 'schedule', 'frequency', 'location')
+        # ケース一覧テーブル（順序: 区 → ケース番号 → 曜日・時間 → 頻度 → 場所）
+        case_columns = ('district', 'case_number', 'schedule', 'frequency', 'location')
         self.case_tree = ttk.Treeview(case_frame, columns=case_columns, show='headings', height=6)
         
         # 列の設定
-        self.case_tree.heading('case_number', text='ケース番号')
         self.case_tree.heading('district', text='区')
-        self.case_tree.heading('schedule', text='日程・時間')
+        self.case_tree.heading('case_number', text='ケース番号')
+        self.case_tree.heading('schedule', text='曜日・時間')
         self.case_tree.heading('frequency', text='頻度')
         self.case_tree.heading('location', text='場所')
         
         # 列幅の設定
-        self.case_tree.column('case_number', width=100)
         self.case_tree.column('district', width=80)
+        self.case_tree.column('case_number', width=100)
         self.case_tree.column('schedule', width=120)
         self.case_tree.column('frequency', width=60)
         self.case_tree.column('location', width=80)
@@ -782,6 +820,7 @@ class StaffManagerDialog(tk.Toplevel):
         self.case_context_menu.add_command(label="削除", command=self.delete_case_item)
         
         self.case_tree.bind("<Button-3>", self.show_case_context_menu)
+        self.case_tree.bind("<Double-1>", self.on_case_double_click)  # ダブルクリックで編集
         
         # 初期データ読み込み
         self.refresh_staff_tree()
@@ -862,6 +901,10 @@ class StaffManagerDialog(tk.Toplevel):
             else:
                 self.staff_start_time_var.set('')
                 self.staff_end_time_var.set('')
+            
+            # 備考
+            self.staff_notes_text.delete(1.0, tk.END)
+            self.staff_notes_text.insert(1.0, staff.get('notes', ''))
                 
         except Exception as e:
             print(f"load_staff_details エラー: {e}")
@@ -875,33 +918,46 @@ class StaffManagerDialog(tk.Toplevel):
             
             # 選択された支援員のケースのみを表示
             if self.selected_staff_id:
-                # 支援員情報を直接取得（staffテーブルからケース情報を取得）
-                conn = sqlite3.connect(str(self.staff_manager.db_path), timeout=10.0)
-                cursor = conn.cursor()
-                cursor.execute('SELECT * FROM staff WHERE id = ?', (self.selected_staff_id,))
-                staff_columns = [desc[0] for desc in cursor.description]
-                staff_data = dict(zip(staff_columns, cursor.fetchone()))
-                conn.close()
+                # 支援員に割り当てられているケースを取得
+                cases = self.staff_manager.get_staff_with_cases(self.selected_staff_id)
                 
-                # ケース情報があれば表示
-                case_number = staff_data.get('case_number', '')
-                case_district = staff_data.get('case_district', '')
-                case_day = staff_data.get('case_day', '')
-                case_time = staff_data.get('case_time', '')
-                case_frequency = staff_data.get('case_frequency', '')
-                case_location = staff_data.get('case_location', '')
+                # エリアでフィルタリング
+                selected_area = getattr(self, 'case_area_var', tk.StringVar(value="全て")).get()
+                if selected_area and selected_area != "全て":
+                    # 選択されたエリアの区のIDを取得
+                    all_districts = self.staff_manager.get_all_districts()
+                    area_district_ids = set()
+                    for district in all_districts:
+                        if district.get('area_name') == selected_area:
+                            area_district_ids.add(district.get('id'))
+                    
+                    # エリアに属する区のケースのみをフィルタリング
+                    cases = [case for case in cases if case.get('district_id') in area_district_ids]
                 
-                # ケース番号が存在する場合のみ表示
-                if case_number and case_number.strip() != '' and case_number != 'None':
-                    self.case_tree.insert('', 'end', values=(
-                        case_number,
-                        case_district or '',
-                        f"{case_day or ''} {case_time or ''}",
-                        case_frequency or '',
-                        case_location or ''
-                    ))
+                # 各ケースを表示
+                for case in cases:
+                    case_id = case.get('id', '')
+                    case_number = case.get('case_number', '')
+                    district_name = case.get('district_name', '')
+                    schedule_day = case.get('schedule_day', '')
+                    schedule_time = case.get('schedule_time', '')
+                    frequency = case.get('frequency', '')
+                    location = case.get('location', '')
+                    
+                    # ケース番号が存在する場合のみ表示
+                    if case_number and case_number.strip() != '':
+                        # ケースIDをtagsに保存（編集時に使用）
+                        self.case_tree.insert('', 'end', values=(
+                            district_name or '',
+                            case_number,
+                            f"{schedule_day or ''} {schedule_time or ''}".strip(),
+                            frequency or '',
+                            location or ''
+                        ), tags=(str(case_id),))
         except Exception as e:
             print(f"refresh_case_list エラー: {e}")
+            import traceback
+            traceback.print_exc()
             # エラーが発生した場合は空のリストを表示
             pass
 
@@ -912,12 +968,29 @@ class StaffManagerDialog(tk.Toplevel):
             self.case_tree.selection_set(item)
             self.case_context_menu.post(event.x_root, event.y_root)
 
-    def edit_case(self):
-        """ケースを編集"""
+    def on_case_double_click(self, event):
+        """ケースのダブルクリックイベント（編集）"""
         selection = self.case_tree.selection()
         if selection:
-            case_id = self.case_tree.item(selection[0])['tags'][0]
-            messagebox.showinfo("編集", f"ケースID {case_id} を編集")
+            item = selection[0]
+            tags = self.case_tree.item(item)['tags']
+            if tags:
+                case_id = tags[0]
+                self.open_edit_case_dialog(case_id)
+    
+    def edit_case(self):
+        """ケースを編集（右クリックメニューから）"""
+        selection = self.case_tree.selection()
+        if selection:
+            item = selection[0]
+            tags = self.case_tree.item(item)['tags']
+            if tags:
+                case_id = tags[0]
+                self.open_edit_case_dialog(case_id)
+            else:
+                messagebox.showwarning("警告", "ケース情報が見つかりません")
+        else:
+            messagebox.showwarning("警告", "編集するケースを選択してください")
 
     def delete_case_item(self):
         """ケース項目を削除（未割り当てケースに戻す）"""
@@ -1049,20 +1122,50 @@ class StaffManagerDialog(tk.Toplevel):
         form_frame = tk.Frame(scrollable_frame)
         form_frame.pack(fill="both", expand=True)
         
-        # 区（最初の入力項目）
+        # エリア（最初の入力項目）
+        area_frame = tk.Frame(form_frame)
+        area_frame.pack(fill="x", pady=5)
+        tk.Label(area_frame, text="エリア:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        area_var = tk.StringVar()
+        area_var.set("")
+        
+        # エリア一覧を取得
+        try:
+            all_districts = self.staff_manager.get_all_districts()
+            # エリア名の一意なリストを作成
+            area_names = list(set([d['area_name'] for d in all_districts]))
+            area_names.sort()  # ソート
+        except Exception as e:
+            print(f"エリア取得エラー: {e}")
+            area_names = ["東エリア", "南エリア"]
+            all_districts = []
+        
+        area_combo = ttk.Combobox(area_frame, textvariable=area_var, values=area_names, width=27, state="readonly")
+        area_combo.pack(side="left", padx=(10, 0))
+        
+        # 区（エリアの後に表示）
         district_frame = tk.Frame(form_frame)
         district_frame.pack(fill="x", pady=5)
         tk.Label(district_frame, text="区:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
         district_var = tk.StringVar()
-        try:
-            districts = self.staff_manager.get_all_districts()
-            district_names = [d['name'] for d in districts]
-        except Exception as e:
-            print(f"区取得エラー: {e}")
-            district_names = ["城東区", "鶴見区", "天王寺区", "中央区", "浪速区", "生野区", "東成区", "阿倍野区", "平野区", "住吉区", "東住吉区", "西成区"]
         
-        district_combo = ttk.Combobox(district_frame, textvariable=district_var, values=district_names, width=27, state="readonly")
+        # 区のリスト（エリア選択で更新）
+        district_combo = ttk.Combobox(district_frame, textvariable=district_var, values=[], width=27, state="readonly")
         district_combo.pack(side="left", padx=(10, 0))
+        
+        def update_districts(event=None):
+            """エリア選択に応じて区のリストを更新"""
+            selected_area = area_var.get()
+            if selected_area:
+                # 選択されたエリアに属する区のみを表示
+                filtered_districts = [d['name'] for d in all_districts if d['area_name'] == selected_area]
+                district_combo['values'] = filtered_districts
+            else:
+                # エリア未選択の場合は全ての区を表示
+                district_combo['values'] = [d['name'] for d in all_districts]
+            district_var.set("")  # 区の選択をリセット
+        
+        area_combo.bind("<<ComboboxSelected>>", update_districts)
         
         # ケース番号（2番目の入力項目）
         case_frame1 = tk.Frame(form_frame)
@@ -1078,12 +1181,81 @@ class StaffManagerDialog(tk.Toplevel):
         phone_number_var = tk.StringVar()
         tk.Entry(phone_frame, textvariable=phone_number_var, width=30, font=("游ゴシック", 10)).pack(side="left", padx=(10, 0))
         
-        # 児童氏名
-        child_frame = tk.Frame(form_frame)
-        child_frame.pack(fill="x", pady=5)
-        tk.Label(child_frame, text="児童氏名:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
-        child_name_var = tk.StringVar()
-        tk.Entry(child_frame, textvariable=child_name_var, width=30, font=("游ゴシック", 10)).pack(side="left", padx=(10, 0))
+        # 児童氏名（苗字）
+        child_last_frame = tk.Frame(form_frame)
+        child_last_frame.pack(fill="x", pady=5)
+        tk.Label(child_last_frame, text="児童氏名（姓）:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        child_last_name_var = tk.StringVar()
+        
+        def is_katakana_char(char):
+            """文字がカタカナかどうかをチェック"""
+            return (
+                '\u30A0' <= char <= '\u30FF' or  # カタカナ
+                '\u31F0' <= char <= '\u31FF' or  # カタカナ拡張
+                char == '\u30FC' or  # 長音符（ー）
+                char == '\u30FB' or  # 中点（・）
+                char == ' '  # スペース（苗字と下の名前の間）
+            )
+        
+        def validate_katakana(new_value):
+            """カタカナのみ入力可能にする検証関数"""
+            if not new_value:
+                return True
+            # 全ての文字がカタカナであるかチェック
+            for char in new_value:
+                if not is_katakana_char(char):
+                    return False
+            return True
+        
+        def filter_katakana(event, entry_widget, var):
+            """入力された文字をフィルタリングしてカタカナのみ残す"""
+            current_value = var.get()
+            if not current_value:
+                return
+            
+            # カタカナ以外の文字を削除
+            filtered = ''.join([char for char in current_value if is_katakana_char(char)])
+            
+            # 値が変更された場合のみ更新（無限ループを防ぐ）
+            if filtered != current_value:
+                var.set(filtered)
+                entry_widget.icursor(len(filtered))
+        
+        vcmd_katakana = (child_last_frame.register(validate_katakana), '%P')
+        child_last_entry = tk.Entry(
+            child_last_frame, 
+            textvariable=child_last_name_var, 
+            width=30, 
+            font=("游ゴシック", 10),
+            validate='key',
+            validatecommand=vcmd_katakana
+        )
+        child_last_entry.pack(side="left", padx=(10, 0))
+        # キーリリース時にフィルタリング（コピー&ペーストなどに対応）
+        child_last_entry.bind('<KeyRelease>', lambda e: filter_katakana(e, child_last_entry, child_last_name_var))
+        child_last_entry.bind('<FocusOut>', lambda e: filter_katakana(e, child_last_entry, child_last_name_var))
+        # ペースト時にフィルタリング
+        child_last_entry.bind('<Control-v>', lambda e: child_last_entry.after_idle(lambda: filter_katakana(None, child_last_entry, child_last_name_var)))
+        
+        # 児童氏名（下の名前）
+        child_first_frame = tk.Frame(form_frame)
+        child_first_frame.pack(fill="x", pady=5)
+        tk.Label(child_first_frame, text="児童氏名（名）:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        child_first_name_var = tk.StringVar()
+        child_first_entry = tk.Entry(
+            child_first_frame, 
+            textvariable=child_first_name_var, 
+            width=30, 
+            font=("游ゴシック", 10),
+            validate='key',
+            validatecommand=vcmd_katakana
+        )
+        child_first_entry.pack(side="left", padx=(10, 0))
+        # キーリリース時にフィルタリング
+        child_first_entry.bind('<KeyRelease>', lambda e: filter_katakana(e, child_first_entry, child_first_name_var))
+        child_first_entry.bind('<FocusOut>', lambda e: filter_katakana(e, child_first_entry, child_first_name_var))
+        # ペースト時にフィルタリング
+        child_first_entry.bind('<Control-v>', lambda e: child_first_entry.after_idle(lambda: filter_katakana(None, child_first_entry, child_first_name_var)))
         
         # 曜日
         day_frame = tk.Frame(form_frame)
@@ -1130,7 +1302,7 @@ class StaffManagerDialog(tk.Toplevel):
         freq_frame.pack(fill="x", pady=5)
         tk.Label(freq_frame, text="頻度:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
         frequency_var = tk.StringVar()
-        frequency_combo = ttk.Combobox(freq_frame, textvariable=frequency_var, values=["週1回", "週2回", "月1回", "月2回", "その他"], width=27, state="readonly")
+        frequency_combo = ttk.Combobox(freq_frame, textvariable=frequency_var, values=["毎週", "隔週", "月１回", "オンライン", "不定期", "休止中"], width=27, state="readonly")
         frequency_combo.pack(side="left", padx=(10, 0))
         
         # 備考
@@ -1159,16 +1331,103 @@ class StaffManagerDialog(tk.Toplevel):
                     messagebox.showwarning("警告", "区を選択してください")
                     return
                 
-                if not child_name_var.get().strip():
-                    messagebox.showwarning("警告", "児童氏名を入力してください")
+                child_last_name = child_last_name_var.get().strip()
+                child_first_name = child_first_name_var.get().strip()
+                if not child_last_name and not child_first_name:
+                    messagebox.showwarning("警告", "児童氏名（姓または名）を入力してください")
                     return
                 
                 # チェックされた曜日を文字列として取得
                 selected_days = ''.join([day for day in days if day_vars[day].get()])
                 
-                # 区のIDを取得
+                if not selected_days:
+                    messagebox.showwarning("警告", "曜日を選択してください")
+                    return
+                
+                # 勤務可能性チェック
+                if self.selected_staff_id:
+                    staff = self.staff_manager.get_staff_by_id(self.selected_staff_id)
+                    if staff:
+                        work_days_str = staff.get('work_days', '') or ''
+                        work_hours_str = staff.get('work_hours', '') or ''
+                        schedule_time = schedule_time_var.get().strip()
+                        
+                        # 勤務曜日チェック
+                        if work_days_str:
+                            unavailable_days = []
+                            for day in selected_days:
+                                if day not in work_days_str:
+                                    unavailable_days.append(day)
+                            if unavailable_days:
+                                messagebox.showerror(
+                                    "エラー", 
+                                    f"選択された曜日（{''.join(unavailable_days)}）は\n"
+                                    f"この支援員の勤務可能日ではありません。\n"
+                                    f"勤務可能日: {work_days_str}"
+                                )
+                                return
+                        
+                        # 勤務時間チェック
+                        if work_hours_str and schedule_time:
+                            try:
+                                # 時間を解析（例: "14:00-15:00" または "14:00"）
+                                time_clean = schedule_time.replace('：', ':').replace('～', '-').replace('~', '-').strip()
+                                start_time_str = time_clean
+                                end_time_str = None
+                                
+                                if '-' in time_clean:
+                                    start_time_str, end_time_str = time_clean.split('-')
+                                else:
+                                    # 開始時間のみの場合は1時間後を終了時間とする
+                                    start_parts = start_time_str.split(':')
+                                    start_hour = int(start_parts[0].strip())
+                                    start_min = int(start_parts[1].strip()) if len(start_parts) > 1 and start_parts[1].strip() else 0
+                                    end_hour = start_hour + 1
+                                    end_min = start_min
+                                    if end_hour >= 24:
+                                        end_hour = 23
+                                        end_min = 59
+                                    end_time_str = f"{end_hour:02d}:{end_min:02d}"
+                                
+                                # 勤務時間を解析
+                                work_time_clean = work_hours_str.replace('：', ':').replace('～', '-').replace('~', '-').strip()
+                                if '-' in work_time_clean:
+                                    work_start_str, work_end_str = work_time_clean.split('-')
+                                    work_start_parts = work_start_str.strip().split(':')
+                                    work_end_parts = work_end_str.strip().split(':')
+                                    
+                                    work_start_hour = int(work_start_parts[0].strip()) if work_start_parts[0].strip() else 0
+                                    work_start_min = int(work_start_parts[1].strip()) if len(work_start_parts) > 1 and work_start_parts[1].strip() else 0
+                                    work_end_hour = int(work_end_parts[0].strip()) if work_end_parts[0].strip() else 0
+                                    work_end_min = int(work_end_parts[1].strip()) if len(work_end_parts) > 1 and work_end_parts[1].strip() else 0
+                                    
+                                    # ケースの開始時間を解析
+                                    case_start_parts = start_time_str.strip().split(':')
+                                    case_start_hour = int(case_start_parts[0].strip()) if case_start_parts[0].strip() else 0
+                                    case_start_min = int(case_start_parts[1].strip()) if len(case_start_parts) > 1 and case_start_parts[1].strip() else 0
+                                    
+                                    # 時間を分単位に変換
+                                    work_start_total = work_start_hour * 60 + work_start_min
+                                    work_end_total = work_end_hour * 60 + work_end_min
+                                    case_start_total = case_start_hour * 60 + case_start_min
+                                    
+                                    # ケースの開始時間が勤務時間外の場合はエラー
+                                    if case_start_total < work_start_total or case_start_total >= work_end_total:
+                                        messagebox.showerror(
+                                            "エラー",
+                                            f"選択された時間帯（{schedule_time}）は\n"
+                                            f"この支援員の勤務時間外です。\n"
+                                            f"勤務可能時間: {work_hours_str}"
+                                        )
+                                        return
+                            except Exception as e:
+                                print(f"勤務時間チェックエラー: {e}")
+                                # エラーが発生した場合は警告のみ（保存は可能）
+                                pass
+                
+                # 区のIDを取得（all_districtsは関数外の変数を参照）
                 district_id = None
-                for district in districts:
+                for district in all_districts:
                     if district['name'] == district_var.get():
                         district_id = district['id']
                         break
@@ -1182,7 +1441,8 @@ class StaffManagerDialog(tk.Toplevel):
                     'case_number': case_number_var.get().strip(),
                     'district_id': district_id,
                     'phone_number': phone_number_var.get().strip(),
-                    'child_name': child_name_var.get().strip(),
+                    'child_last_name': child_last_name,
+                    'child_first_name': child_first_name,
                     'schedule_day': selected_days,
                     'schedule_time': schedule_time_var.get().strip(),
                     'location': location_var.get().strip(),
@@ -1196,6 +1456,17 @@ class StaffManagerDialog(tk.Toplevel):
                 
                 # ケース一覧を更新
                 self.refresh_case_list()
+                
+                # スケジュールを更新（週間スケジュールウィンドウが開いている場合）
+                if self.schedule_window and self.schedule_window.winfo_exists():
+                    try:
+                        print("🔄 スケジュールを更新中...")
+                        self.refresh_schedule()
+                        print("✅ スケジュール更新完了")
+                    except Exception as e:
+                        print(f"❌ スケジュール更新エラー: {e}")
+                        import traceback
+                        traceback.print_exc()
                 
                 # ダイアログを閉じる
                 case_dialog.destroy()
@@ -1234,27 +1505,480 @@ class StaffManagerDialog(tk.Toplevel):
         # ボタンを中央揃えにする
         button_frame.pack_configure(anchor="center")
     
+    def open_edit_case_dialog(self, case_id):
+        """ケース編集ダイアログを開く"""
+        # ケース情報を取得
+        case = self.staff_manager.get_case_by_id(case_id)
+        if not case:
+            messagebox.showerror("エラー", "ケース情報が見つかりません")
+            return
+        
+        # ケース編集ダイアログを開く
+        case_dialog = tk.Toplevel(self)
+        case_dialog.title("ケース編集")
+        case_dialog.geometry("500x600")
+        case_dialog.transient(self)
+        case_dialog.grab_set()
+        
+        # 中央に配置
+        case_dialog.update_idletasks()
+        x = (case_dialog.winfo_screenwidth() // 2) - (case_dialog.winfo_width() // 2)
+        y = (case_dialog.winfo_screenheight() // 2) - (case_dialog.winfo_height() // 2)
+        case_dialog.geometry(f'+{x}+{y}')
+        
+        # メインフレーム
+        main_frame = tk.Frame(case_dialog)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # タイトル
+        title_label = tk.Label(main_frame, text="ケース情報を編集してください", font=("游ゴシック", 14, "bold"))
+        title_label.pack(pady=(0, 20))
+        
+        # スクロール可能なフレーム
+        canvas = tk.Canvas(main_frame)
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # フォーム項目
+        form_frame = tk.Frame(scrollable_frame)
+        form_frame.pack(fill="both", expand=True)
+        
+        # エリア
+        area_frame = tk.Frame(form_frame)
+        area_frame.pack(fill="x", pady=5)
+        tk.Label(area_frame, text="エリア:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        area_var = tk.StringVar()
+        area_var.set(case.get('area_name', ''))
+        
+        # エリア一覧を取得
+        try:
+            all_districts = self.staff_manager.get_all_districts()
+            area_names = list(set([d['area_name'] for d in all_districts]))
+            area_names.sort()
+        except Exception as e:
+            print(f"エリア取得エラー: {e}")
+            area_names = ["東エリア", "南エリア"]
+            all_districts = []
+        
+        area_combo = ttk.Combobox(area_frame, textvariable=area_var, values=area_names, width=27, state="readonly")
+        area_combo.pack(side="left", padx=(10, 0))
+        
+        # 区
+        district_frame = tk.Frame(form_frame)
+        district_frame.pack(fill="x", pady=5)
+        tk.Label(district_frame, text="区:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        district_var = tk.StringVar()
+        district_var.set(case.get('district_name', ''))
+        
+        district_combo = ttk.Combobox(district_frame, textvariable=district_var, values=[], width=27, state="readonly")
+        district_combo.pack(side="left", padx=(10, 0))
+        
+        def update_districts(event=None):
+            """エリア選択に応じて区のリストを更新"""
+            selected_area = area_var.get()
+            if selected_area:
+                filtered_districts = [d['name'] for d in all_districts if d['area_name'] == selected_area]
+                district_combo['values'] = filtered_districts
+            else:
+                district_combo['values'] = [d['name'] for d in all_districts]
+            # 既存の値を保持
+            current_district = case.get('district_name', '')
+            if current_district in district_combo['values']:
+                district_var.set(current_district)
+        
+        area_combo.bind("<<ComboboxSelected>>", update_districts)
+        update_districts()  # 初期化
+        
+        # ケース番号
+        case_frame1 = tk.Frame(form_frame)
+        case_frame1.pack(fill="x", pady=5)
+        tk.Label(case_frame1, text="ケース番号:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        case_number_var = tk.StringVar()
+        case_number_var.set(case.get('case_number', ''))
+        tk.Entry(case_frame1, textvariable=case_number_var, width=30, font=("游ゴシック", 10)).pack(side="left", padx=(10, 0))
+        
+        # 電話番号
+        phone_frame = tk.Frame(form_frame)
+        phone_frame.pack(fill="x", pady=5)
+        tk.Label(phone_frame, text="電話番号:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        phone_number_var = tk.StringVar()
+        phone_number_var.set(case.get('phone_number', ''))
+        tk.Entry(phone_frame, textvariable=phone_number_var, width=30, font=("游ゴシック", 10)).pack(side="left", padx=(10, 0))
+        
+        # 児童氏名（苗字）
+        child_last_frame = tk.Frame(form_frame)
+        child_last_frame.pack(fill="x", pady=5)
+        tk.Label(child_last_frame, text="児童氏名（姓）:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        child_last_name_var = tk.StringVar()
+        child_last_name_var.set(case.get('child_last_name', ''))
+        
+        def is_katakana_char_edit(char):
+            """文字がカタカナかどうかをチェック（編集用）"""
+            return (
+                '\u30A0' <= char <= '\u30FF' or  # カタカナ
+                '\u31F0' <= char <= '\u31FF' or  # カタカナ拡張
+                char == '\u30FC' or  # 長音符（ー）
+                char == '\u30FB' or  # 中点（・）
+                char == ' '  # スペース
+            )
+        
+        def validate_katakana_edit(new_value):
+            """カタカナのみ入力可能にする検証関数（編集用）"""
+            if not new_value:
+                return True
+            for char in new_value:
+                if not is_katakana_char_edit(char):
+                    return False
+            return True
+        
+        def filter_katakana_edit(event, entry_widget, var):
+            """入力された文字をフィルタリングしてカタカナのみ残す（編集用）"""
+            current_value = var.get()
+            if not current_value:
+                return
+            
+            # カタカナ以外の文字を削除
+            filtered = ''.join([char for char in current_value if is_katakana_char_edit(char)])
+            
+            # 値が変更された場合のみ更新（無限ループを防ぐ）
+            if filtered != current_value:
+                var.set(filtered)
+                entry_widget.icursor(len(filtered))
+        
+        vcmd_katakana_edit = (child_last_frame.register(validate_katakana_edit), '%P')
+        child_last_entry = tk.Entry(
+            child_last_frame, 
+            textvariable=child_last_name_var, 
+            width=30, 
+            font=("游ゴシック", 10),
+            validate='key',
+            validatecommand=vcmd_katakana_edit
+        )
+        child_last_entry.pack(side="left", padx=(10, 0))
+        # キーリリース時にフィルタリング
+        child_last_entry.bind('<KeyRelease>', lambda e: filter_katakana_edit(e, child_last_entry, child_last_name_var))
+        child_last_entry.bind('<FocusOut>', lambda e: filter_katakana_edit(e, child_last_entry, child_last_name_var))
+        # ペースト時にフィルタリング
+        child_last_entry.bind('<Control-v>', lambda e: child_last_entry.after_idle(lambda: filter_katakana_edit(None, child_last_entry, child_last_name_var)))
+        
+        # 児童氏名（下の名前）
+        child_first_frame = tk.Frame(form_frame)
+        child_first_frame.pack(fill="x", pady=5)
+        tk.Label(child_first_frame, text="児童氏名（名）:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        child_first_name_var = tk.StringVar()
+        child_first_name_var.set(case.get('child_first_name', ''))
+        child_first_entry = tk.Entry(
+            child_first_frame, 
+            textvariable=child_first_name_var, 
+            width=30, 
+            font=("游ゴシック", 10),
+            validate='key',
+            validatecommand=vcmd_katakana_edit
+        )
+        child_first_entry.pack(side="left", padx=(10, 0))
+        # キーリリース時にフィルタリング
+        child_first_entry.bind('<KeyRelease>', lambda e: filter_katakana_edit(e, child_first_entry, child_first_name_var))
+        child_first_entry.bind('<FocusOut>', lambda e: filter_katakana_edit(e, child_first_entry, child_first_name_var))
+        # ペースト時にフィルタリング
+        child_first_entry.bind('<Control-v>', lambda e: child_first_entry.after_idle(lambda: filter_katakana_edit(None, child_first_entry, child_first_name_var)))
+        
+        # 曜日
+        day_frame = tk.Frame(form_frame)
+        day_frame.pack(fill="x", pady=5)
+        tk.Label(day_frame, text="曜日:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        
+        day_checkbox_frame = tk.Frame(day_frame)
+        day_checkbox_frame.pack(side="left", padx=(10, 0))
+        
+        day_vars = {}
+        days = ["月", "火", "水", "木", "金"]
+        schedule_day = case.get('schedule_day', '')
+        for day in days:
+            day_vars[day] = tk.BooleanVar()
+            if day in schedule_day:
+                day_vars[day].set(True)
+        
+        for day in days:
+            ttk.Checkbutton(day_checkbox_frame, text=day, variable=day_vars[day]).pack(side="left", padx=5)
+        
+        # 時間
+        time_frame = tk.Frame(form_frame)
+        time_frame.pack(fill="x", pady=5)
+        tk.Label(time_frame, text="時間:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        schedule_time_var = tk.StringVar()
+        schedule_time_var.set(case.get('schedule_time', ''))
+        tk.Entry(time_frame, textvariable=schedule_time_var, width=30, font=("游ゴシック", 10)).pack(side="left", padx=(10, 0))
+        
+        # 場所
+        location_frame = tk.Frame(form_frame)
+        location_frame.pack(fill="x", pady=5)
+        tk.Label(location_frame, text="場所:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        location_var = tk.StringVar()
+        location_var.set(case.get('location', ''))
+        tk.Entry(location_frame, textvariable=location_var, width=30, font=("游ゴシック", 10)).pack(side="left", padx=(10, 0))
+        
+        # 初回面談日
+        meeting_frame = tk.Frame(form_frame)
+        meeting_frame.pack(fill="x", pady=5)
+        tk.Label(meeting_frame, text="初回面談日:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        first_meeting_var = tk.StringVar()
+        first_meeting_var.set(case.get('first_meeting_date', ''))
+        tk.Entry(meeting_frame, textvariable=first_meeting_var, width=30, font=("游ゴシック", 10)).pack(side="left", padx=(10, 0))
+        
+        # 頻度
+        freq_frame = tk.Frame(form_frame)
+        freq_frame.pack(fill="x", pady=5)
+        tk.Label(freq_frame, text="頻度:", font=("游ゴシック", 10), width=15, anchor="w").pack(side="left")
+        frequency_var = tk.StringVar()
+        # 既存の頻度を取得（旧形式の場合は新形式に変換）
+        existing_frequency = case.get('frequency', '')
+        # 旧形式から新形式への変換
+        if existing_frequency:
+            if "週" in existing_frequency and ("1" in existing_frequency or "2" in existing_frequency):
+                existing_frequency = "毎週"
+            elif "隔週" in existing_frequency or "隔" in existing_frequency:
+                existing_frequency = "隔週"
+            elif "月" in existing_frequency:
+                existing_frequency = "月１回"
+            elif "その他" in existing_frequency:
+                existing_frequency = "不定期"
+        frequency_var.set(existing_frequency)
+        frequency_combo = ttk.Combobox(freq_frame, textvariable=frequency_var, values=["毎週", "隔週", "月１回", "オンライン", "不定期", "休止中"], width=27, state="readonly")
+        frequency_combo.pack(side="left", padx=(10, 0))
+        
+        # 備考
+        notes_frame = tk.Frame(form_frame)
+        notes_frame.pack(fill="x", pady=5)
+        tk.Label(notes_frame, text="備考:", font=("游ゴシック", 10), width=15, anchor="nw").pack(side="left", anchor="nw")
+        notes_text = tk.Text(notes_frame, width=30, height=4, wrap=tk.WORD, font=("游ゴシック", 10))
+        notes_text.insert("1.0", case.get('notes', ''))
+        notes_text.pack(side="left", padx=(10, 0))
+        
+        # スクロールバーとキャンバスを配置
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # ボタン
+        button_frame = tk.Frame(main_frame)
+        button_frame.pack(side="bottom", pady=20, fill="x")
+        
+        def save_case():
+            try:
+                if not case_number_var.get().strip():
+                    messagebox.showwarning("警告", "ケース番号を入力してください")
+                    return
+                
+                if not district_var.get():
+                    messagebox.showwarning("警告", "区を選択してください")
+                    return
+                
+                child_last_name = child_last_name_var.get().strip()
+                child_first_name = child_first_name_var.get().strip()
+                if not child_last_name and not child_first_name:
+                    messagebox.showwarning("警告", "児童氏名（姓または名）を入力してください")
+                    return
+                
+                selected_days = ''.join([day for day in days if day_vars[day].get()])
+                if not selected_days:
+                    messagebox.showwarning("警告", "曜日を選択してください")
+                    return
+                
+                # 勤務可能性チェック
+                if self.selected_staff_id:
+                    staff = self.staff_manager.get_staff_by_id(self.selected_staff_id)
+                    if staff:
+                        work_days_str = staff.get('work_days', '') or ''
+                        work_hours_str = staff.get('work_hours', '') or ''
+                        schedule_time = schedule_time_var.get().strip()
+                        
+                        # 勤務曜日チェック
+                        if work_days_str:
+                            unavailable_days = []
+                            for day in selected_days:
+                                if day not in work_days_str:
+                                    unavailable_days.append(day)
+                            if unavailable_days:
+                                messagebox.showerror(
+                                    "エラー", 
+                                    f"選択された曜日（{''.join(unavailable_days)}）は\n"
+                                    f"この支援員の勤務可能日ではありません。\n"
+                                    f"勤務可能日: {work_days_str}"
+                                )
+                                return
+                        
+                        # 勤務時間チェック
+                        if work_hours_str and schedule_time:
+                            try:
+                                # 時間を解析（例: "14:00-15:00" または "14:00"）
+                                time_clean = schedule_time.replace('：', ':').replace('～', '-').replace('~', '-').strip()
+                                start_time_str = time_clean
+                                end_time_str = None
+                                
+                                if '-' in time_clean:
+                                    start_time_str, end_time_str = time_clean.split('-')
+                                else:
+                                    # 開始時間のみの場合は1時間後を終了時間とする
+                                    start_parts = start_time_str.split(':')
+                                    start_hour = int(start_parts[0].strip())
+                                    start_min = int(start_parts[1].strip()) if len(start_parts) > 1 and start_parts[1].strip() else 0
+                                    end_hour = start_hour + 1
+                                    end_min = start_min
+                                    if end_hour >= 24:
+                                        end_hour = 23
+                                        end_min = 59
+                                    end_time_str = f"{end_hour:02d}:{end_min:02d}"
+                                
+                                # 勤務時間を解析
+                                work_time_clean = work_hours_str.replace('：', ':').replace('～', '-').replace('~', '-').strip()
+                                if '-' in work_time_clean:
+                                    work_start_str, work_end_str = work_time_clean.split('-')
+                                    work_start_parts = work_start_str.strip().split(':')
+                                    work_end_parts = work_end_str.strip().split(':')
+                                    
+                                    work_start_hour = int(work_start_parts[0].strip()) if work_start_parts[0].strip() else 0
+                                    work_start_min = int(work_start_parts[1].strip()) if len(work_start_parts) > 1 and work_start_parts[1].strip() else 0
+                                    work_end_hour = int(work_end_parts[0].strip()) if work_end_parts[0].strip() else 0
+                                    work_end_min = int(work_end_parts[1].strip()) if len(work_end_parts) > 1 and work_end_parts[1].strip() else 0
+                                    
+                                    # ケースの開始時間を解析
+                                    case_start_parts = start_time_str.strip().split(':')
+                                    case_start_hour = int(case_start_parts[0].strip()) if case_start_parts[0].strip() else 0
+                                    case_start_min = int(case_start_parts[1].strip()) if len(case_start_parts) > 1 and case_start_parts[1].strip() else 0
+                                    
+                                    # 時間を分単位に変換
+                                    work_start_total = work_start_hour * 60 + work_start_min
+                                    work_end_total = work_end_hour * 60 + work_end_min
+                                    case_start_total = case_start_hour * 60 + case_start_min
+                                    
+                                    # ケースの開始時間が勤務時間外の場合はエラー
+                                    if case_start_total < work_start_total or case_start_total >= work_end_total:
+                                        messagebox.showerror(
+                                            "エラー",
+                                            f"選択された時間帯（{schedule_time}）は\n"
+                                            f"この支援員の勤務時間外です。\n"
+                                            f"勤務可能時間: {work_hours_str}"
+                                        )
+                                        return
+                            except Exception as e:
+                                print(f"勤務時間チェックエラー: {e}")
+                                # エラーが発生した場合は警告のみ（保存は可能）
+                                pass
+                
+                district_id = None
+                for district in all_districts:
+                    if district['name'] == district_var.get():
+                        district_id = district['id']
+                        break
+                
+                if not district_id:
+                    messagebox.showerror("エラー", "選択された区が見つかりません")
+                    return
+                
+                case_data = {
+                    'case_number': case_number_var.get().strip(),
+                    'district_id': district_id,
+                    'phone_number': phone_number_var.get().strip(),
+                    'child_last_name': child_last_name,
+                    'child_first_name': child_first_name,
+                    'schedule_day': selected_days,
+                    'schedule_time': schedule_time_var.get().strip(),
+                    'location': location_var.get().strip(),
+                    'first_meeting_date': first_meeting_var.get().strip(),
+                    'frequency': frequency_var.get(),
+                    'notes': notes_text.get(1.0, tk.END).strip()
+                }
+                
+                # ケースを更新
+                self.staff_manager.update_case_to_staff(case_id, case_data)
+                
+                # ケース一覧を更新
+                self.refresh_case_list()
+                
+                # スケジュールを更新
+                if self.schedule_window and self.schedule_window.winfo_exists():
+                    try:
+                        print("🔄 スケジュールを更新中...")
+                        self.refresh_schedule()
+                        print("✅ スケジュール更新完了")
+                    except Exception as e:
+                        print(f"❌ スケジュール更新エラー: {e}")
+                
+                case_dialog.destroy()
+                messagebox.showinfo("完了", "ケース情報を更新しました")
+                
+            except Exception as e:
+                print(f"ケース更新エラー: {e}")
+                messagebox.showerror("エラー", f"ケースの更新中にエラーが発生しました: {e}")
+        
+        def cancel_case():
+            case_dialog.destroy()
+        
+        tk.Button(
+            button_frame,
+            text="保存",
+            font=("游ゴシック", 10, "bold"),
+            bg="#27ae60",
+            fg="white",
+            command=save_case,
+            padx=20,
+            pady=5
+        ).pack(side="left", padx=5)
+        
+        tk.Button(
+            button_frame,
+            text="キャンセル",
+            font=("游ゴシック", 10),
+            bg="#95a5a6",
+            fg="white",
+            command=cancel_case,
+            padx=20,
+            pady=5
+        ).pack(side="left", padx=5)
+        
+        button_frame.pack_configure(anchor="center")
+    
     def open_schedule_window(self):
         """スケジュールウィンドウを開く"""
         if not self.selected_staff_id:
             messagebox.showwarning("警告", "支援員を選択してください")
             return
         
+        # 既にスケジュールウィンドウが開いている場合は閉じる
+        if self.schedule_window and self.schedule_window.winfo_exists():
+            self.schedule_window.destroy()
+        
         # スケジュールウィンドウを開く
-        schedule_window = tk.Toplevel(self)
-        schedule_window.title("週間スケジュール")
-        schedule_window.geometry("800x600")
-        schedule_window.transient(self)
-        schedule_window.grab_set()
+        self.schedule_window = tk.Toplevel(self)
+        self.schedule_window.title("週間スケジュール")
+        self.schedule_window.geometry("800x600")
+        self.schedule_window.transient(self)
+        # grab_setを削除（他のウィンドウとの連携を可能にするため）
+        
+        # ウィンドウが閉じられた時に参照をクリア
+        self.schedule_window.protocol("WM_DELETE_WINDOW", self.close_schedule_window)
         
         # 中央に配置
-        schedule_window.update_idletasks()
-        x = (schedule_window.winfo_screenwidth() // 2) - (schedule_window.winfo_width() // 2)
-        y = (schedule_window.winfo_screenheight() // 2) - (schedule_window.winfo_height() // 2)
-        schedule_window.geometry(f'+{x}+{y}')
+        self.schedule_window.update_idletasks()
+        x = (self.schedule_window.winfo_screenwidth() // 2) - (self.schedule_window.winfo_width() // 2)
+        y = (self.schedule_window.winfo_screenheight() // 2) - (self.schedule_window.winfo_height() // 2)
+        self.schedule_window.geometry(f'+{x}+{y}')
         
         # スケジュール表示
-        self.create_schedule_view(schedule_window)
+        self.create_schedule_view(self.schedule_window)
+    
+    def close_schedule_window(self):
+        """スケジュールウィンドウを閉じる"""
+        if self.schedule_window:
+            self.schedule_window.destroy()
+            self.schedule_window = None
 
     def create_schedule_view(self, parent):
         """週間スケジュール表ビュー"""
@@ -1314,10 +2038,67 @@ class StaffManagerDialog(tk.Toplevel):
         canvas.delete("all")
         
         # 定数
-        CELL_WIDTH = 100
-        CELL_HEIGHT = 40
-        TIME_SLOTS = [f"{h:02d}:00" for h in range(9, 19)]
+        CELL_WIDTH = 120  # セル幅を少し広げる
+        CELL_HEIGHT = 30  # 30分単位なので少し小さめの高さ
+        # 10:00～19:00の30分単位のタイムスロット
+        TIME_SLOTS = []
+        for h in range(10, 20):  # 10時～19時
+            TIME_SLOTS.append(f"{h:02d}:00")
+            if h < 19:  # 19:30は含めない（19:00まで）
+                TIME_SLOTS.append(f"{h:02d}:30")
         DAYS = ["月", "火", "水", "木", "金"]
+        
+        # 支援員の勤務情報を取得
+        work_days_str = ""
+        work_hours_str = ""
+        if self.selected_staff_id:
+            staff = self.staff_manager.get_staff_by_id(self.selected_staff_id)
+            if staff:
+                work_days_str = staff.get('work_days', '') or ''
+                work_hours_str = staff.get('work_hours', '') or ''
+        
+        # 勤務可能な曜日のセットを作成
+        available_days = set()
+        if work_days_str:
+            for day in DAYS:
+                if day in work_days_str:
+                    available_days.add(day)
+        
+        # 勤務可能な時間帯を計算
+        def is_work_time(time_str):
+            """指定された時間が勤務時間内かどうかを判定"""
+            if not work_hours_str:
+                return True  # 勤務時間が設定されていない場合は全て可能とする
+            
+            try:
+                # 時間を解析（例: "10:00-18:00" または "10：00～18：00"）
+                time_clean = work_hours_str.replace('：', ':').replace('～', '-').replace('~', '-').strip()
+                if '-' in time_clean:
+                    start_str, end_str = time_clean.split('-')
+                    start_parts = start_str.strip().split(':')
+                    end_parts = end_str.strip().split(':')
+                    
+                    start_hour = int(start_parts[0].strip()) if start_parts[0].strip() else 0
+                    start_min = int(start_parts[1].strip()) if len(start_parts) > 1 and start_parts[1].strip() else 0
+                    end_hour = int(end_parts[0].strip()) if end_parts[0].strip() else 0
+                    end_min = int(end_parts[1].strip()) if len(end_parts) > 1 and end_parts[1].strip() else 0
+                    
+                    # チェック対象の時間を解析
+                    time_parts = time_str.split(':')
+                    check_hour = int(time_parts[0].strip())
+                    check_min = int(time_parts[1].strip()) if len(time_parts) > 1 and time_parts[1].strip() else 0
+                    
+                    # 時間を分単位に変換
+                    start_total = start_hour * 60 + start_min
+                    end_total = end_hour * 60 + end_min
+                    check_total = check_hour * 60 + check_min
+                    
+                    # 勤務時間内かチェック
+                    return start_total <= check_total < end_total
+            except:
+                pass
+            
+            return True  # 解析に失敗した場合は可能とする
         
         # ヘッダー（曜日）
         for i, day in enumerate(DAYS):
@@ -1325,50 +2106,105 @@ class StaffManagerDialog(tk.Toplevel):
             canvas.create_rectangle(x, 0, x + CELL_WIDTH, 40, fill="#9b59b6", outline="black")
             canvas.create_text(x + CELL_WIDTH // 2, 20, text=day, font=("游ゴシック", 12, "bold"), fill="white")
         
-        # 時間軸
+        # 時間軸（30分単位で全て表示）
         for i, time in enumerate(TIME_SLOTS):
             y = 40 + i * CELL_HEIGHT
             canvas.create_rectangle(0, y, 80, y + CELL_HEIGHT, fill="#ecf0f1", outline="black")
+            # 全ての時間を表示（30分単位）
             canvas.create_text(40, y + CELL_HEIGHT // 2, text=time, font=("游ゴシック", 9))
         
-        # グリッド
+        # グリッド（勤務不可能な時間帯をグレーで表示）
         for i in range(len(DAYS)):
+            day = DAYS[i]
             for j in range(len(TIME_SLOTS)):
+                time = TIME_SLOTS[j]
                 x = 80 + i * CELL_WIDTH
                 y = 40 + j * CELL_HEIGHT
-                canvas.create_rectangle(x, y, x + CELL_WIDTH, y + CELL_HEIGHT, fill="white", outline="#ddd")
+                
+                # 勤務可能かどうかを判定
+                is_day_available = day in available_days if available_days else True
+                is_time_available = is_work_time(time)
+                is_available = is_day_available and is_time_available
+                
+                # 勤務不可能な場合はグレーで塗りつぶす
+                fill_color = "#e8e8e8" if not is_available else "white"
+                outline_color = "#ccc" if not is_available else "#ddd"
+                
+                canvas.create_rectangle(x, y, x + CELL_WIDTH, y + CELL_HEIGHT, fill=fill_color, outline=outline_color)
         
         # スケジュールデータを取得して描画
         try:
             schedules = self.staff_manager.get_weekly_schedule()
+            # エリアでフィルタリング
+            selected_area = self.area_var.get()
+            if selected_area and selected_area != "全て":
+                # 選択されたエリアの区名を取得
+                all_districts = self.staff_manager.get_all_districts()
+                area_district_names = set()
+                for district in all_districts:
+                    if district.get('area_name') == selected_area:
+                        area_district_names.add(district.get('name'))
+                
+                # エリアに属する区のスケジュールのみをフィルタリング
+                schedules = [s for s in schedules if s.get('district_name') in area_district_names]
+            
             self.draw_schedule_items(schedules, CELL_WIDTH, CELL_HEIGHT, DAYS, TIME_SLOTS)
         except Exception as e:
             print(f"スケジュール取得エラー: {e}")
+            import traceback
+            traceback.print_exc()
 
     def draw_schedule_items(self, schedules, cell_width, cell_height, days, time_slots):
         """スケジュールアイテムを描画"""
         canvas = self.schedule_canvas
         
-        # 色のマッピング
-        colors = [
-            "#ffcdd2", "#f8bbd0", "#e1bee7", "#d1c4e9", "#c5cae9",
-            "#bbdefb", "#b3e5fc", "#b2ebf2", "#b2dfdb", "#c8e6c9",
-            "#dcedc8", "#f0f4c3", "#fff9c4", "#ffecb3", "#ffe0b2"
-        ]
-        
-        staff_colors = {}
-        color_idx = 0
+        # 頻度ごとの色を定義
+        def get_frequency_color(frequency):
+            """頻度に応じた色を返す"""
+            if not frequency:
+                return "#9e9e9e"  # デフォルト（グレー）
+            
+            frequency_str = str(frequency).strip()
+            
+            # 毎週：黄色
+            if "毎週" in frequency_str:
+                return "#ffeb3b"  # 黄色
+            
+            # 隔週：オレンジ
+            if "隔週" in frequency_str:
+                return "#ff9800"  # オレンジ
+            
+            # 月１回：緑
+            if "月１回" in frequency_str or "月1回" in frequency_str:
+                return "#4caf50"  # 緑
+            
+            # オンライン：紫
+            if "オンライン" in frequency_str:
+                return "#8e24aa"  # 紫
+            
+            # 不定期：グレー
+            if "不定期" in frequency_str:
+                return "#9e9e9e"  # グレー
+            
+            # 休止中：グレー
+            if "休止中" in frequency_str:
+                return "#9e9e9e"  # グレー
+            
+            # その他（旧形式の互換性のため）
+            if "週" in frequency_str and ("1" in frequency_str or "２" in frequency_str or "2" in frequency_str):
+                return "#ffeb3b"  # 黄色（毎週として扱う）
+            if "隔週" in frequency_str or "隔" in frequency_str:
+                return "#ff9800"  # オレンジ（隔週として扱う）
+            if "月" in frequency_str:
+                return "#4caf50"  # 緑（月１回として扱う）
+            
+            # デフォルト
+            return "#9e9e9e"  # グレー
         
         for schedule in schedules:
             day = schedule.get('day_of_week', '')
             if day not in days:
                 continue
-            
-            # 支援員ごとの色を割り当て
-            staff_name = schedule.get('staff_name', '')
-            if staff_name not in staff_colors:
-                staff_colors[staff_name] = colors[color_idx % len(colors)]
-                color_idx += 1
             
             # 位置計算
             day_idx = days.index(day)
@@ -1376,22 +2212,56 @@ class StaffManagerDialog(tk.Toplevel):
             end_time = schedule.get('end_time', '')
             
             try:
-                start_hour = int(start_time.split(':')[0])
-                end_hour = int(end_time.split(':')[0])
-                start_min = int(start_time.split(':')[1])
-                end_min = int(end_time.split(':')[1])
+                # 全角コロン（：）を半角コロン（:）に変換
+                start_time_normalized = start_time.replace('：', ':').replace('～', '-').replace('~', '-').strip()
+                end_time_normalized = end_time.replace('：', ':').replace('～', '-').replace('~', '-').strip()
                 
-                # 9時を基準にしたインデックス
-                start_slot = start_hour - 9
-                end_slot = end_hour - 9
+                # '-'が含まれている場合は削除
+                start_time_clean = start_time_normalized.replace('-', '').strip()
+                end_time_clean = end_time_normalized.replace('-', '').strip()
+                
+                # 時間を解析
+                if ':' in start_time_clean:
+                    start_parts = start_time_clean.split(':')
+                    start_hour = int(start_parts[0].strip()) if start_parts[0].strip() else 0
+                    start_min = int(start_parts[1].strip()) if len(start_parts) > 1 and start_parts[1].strip() else 0
+                else:
+                    start_hour = int(start_time_clean) if start_time_clean else 0
+                    start_min = 0
+                
+                if ':' in end_time_clean:
+                    end_parts = end_time_clean.split(':')
+                    end_hour = int(end_parts[0].strip()) if end_parts[0].strip() else 0
+                    end_min = int(end_parts[1].strip()) if len(end_parts) > 1 and end_parts[1].strip() else 0
+                else:
+                    end_hour = int(end_time_clean) if end_time_clean else 0
+                    end_min = 0
+                
+                # 10時を基準にしたスロット計算（30分単位）
+                start_total_minutes = (start_hour - 10) * 60 + start_min
+                end_total_minutes = (end_hour - 10) * 60 + end_min
+                
+                # スロットインデックス（30分単位）
+                start_slot = start_total_minutes // 30
+                end_slot = end_total_minutes // 30
+                
+                # 最低1時間（2スロット分）の高さを確保
+                if end_slot <= start_slot:
+                    end_slot = start_slot + 2  # 1時間 = 2スロット（30分×2）
                 
                 # 座標計算
                 x = 80 + day_idx * cell_width + 2
-                y = 40 + start_slot * cell_height + (start_min / 60 * cell_height) + 2
-                height = (end_slot - start_slot) * cell_height + (end_min / 60 * cell_height) - 4
+                y = 40 + start_slot * cell_height + 2
+                height = (end_slot - start_slot) * cell_height - 4
+                
+                # 表示する情報を取得
+                district_name = schedule.get('district_name', '') or ''
+                frequency = schedule.get('frequency', '') or ''
+                
+                # 頻度に応じた色を取得
+                card_color = get_frequency_color(frequency)
                 
                 # カードを描画
-                card_color = staff_colors[staff_name]
                 card = canvas.create_rectangle(
                     x, y, x + cell_width - 4, y + height,
                     fill=card_color,
@@ -1399,14 +2269,53 @@ class StaffManagerDialog(tk.Toplevel):
                     width=2,
                     tags=("schedule_item", f"schedule_{schedule.get('id', '')}")
                 )
+                child_first_name = schedule.get('child_first_name', '') or ''
+                location = schedule.get('location', '') or ''
                 
-                # テキスト
-                text_content = f"{staff_name}\n{start_time}-{end_time}"
+                # テキスト内容を構築
+                # 1行目: 区名 下の名前（改行なし）
+                # 2行目: 時間（改行）
+                # 3行目: 場所（改行）
+                text_lines = []
+                
+                # 1行目: 区名と下の名前
+                first_line_parts = []
+                if district_name:
+                    first_line_parts.append(district_name)
+                if child_first_name:
+                    first_line_parts.append(child_first_name)
+                if first_line_parts:
+                    text_lines.append(' '.join(first_line_parts))
+                
+                # 2行目: 時間
+                if start_time_normalized and end_time_normalized:
+                    text_lines.append(f"{start_time_normalized}-{end_time_normalized}")
+                
+                # 3行目: 場所
+                if location:
+                    text_lines.append(location)
+                
+                text_content = '\n'.join(text_lines) if text_lines else "情報なし"
+                
+                # セルの高さに応じてフォントサイズを決定（テキストが枠内に収まるように）
+                # 行数に応じて調整（最小8、最大12）
+                num_lines = len(text_lines)
+                if num_lines <= 2:
+                    base_font_size = max(9, min(12, int(height * 0.25)))
+                elif num_lines == 3:
+                    base_font_size = max(8, min(11, int(height * 0.2)))
+                else:
+                    base_font_size = max(8, min(10, int(height * 0.18)))
+                
                 text = canvas.create_text(
                     x + (cell_width - 4) // 2,
                     y + height // 2,
                     text=text_content,
-                    font=("游ゴシック", 8),
+                    font=("游ゴシック", base_font_size, "bold"),
+                    fill="#000",
+                    width=cell_width - 8,  # テキストの幅を制限
+                    justify="center",  # 中央揃え
+                    anchor="center",  # 中央アンカー
                     tags=("schedule_item", f"schedule_{schedule.get('id', '')}")
                 )
                 
@@ -1429,6 +2338,7 @@ class StaffManagerDialog(tk.Toplevel):
             previous_job = self.staff_previous_job_var.get().strip()
             dropbox_number = self.staff_dropbox_var.get().strip()
             hobbies_skills = self.staff_hobbies_text.get(1.0, tk.END).strip()
+            notes = self.staff_notes_text.get(1.0, tk.END).strip()
             
             # 勤務曜日を取得
             work_days = ""
@@ -1465,6 +2375,7 @@ class StaffManagerDialog(tk.Toplevel):
                 'dropbox_number': dropbox_number,
                 'work_days': work_days,
                 'work_hours': work_hours,
+                'notes': notes,
                 'is_active': True
             }
             
@@ -1492,6 +2403,7 @@ class StaffManagerDialog(tk.Toplevel):
         self.staff_previous_job_var.set("")
         self.staff_dropbox_var.set("")
         self.staff_hobbies_text.delete(1.0, tk.END)
+        self.staff_notes_text.delete(1.0, tk.END)
         
         # 勤務曜日をクリア
         for day in ['月', '火', '水', '木', '金']:
@@ -1519,6 +2431,7 @@ class StaffManagerDialog(tk.Toplevel):
             previous_job = self.staff_previous_job_var.get().strip()
             dropbox_number = self.staff_dropbox_var.get().strip()
             hobbies_skills = self.staff_hobbies_text.get(1.0, tk.END).strip()
+            notes = self.staff_notes_text.get(1.0, tk.END).strip()
             
             # 勤務曜日を取得
             work_days = ""
@@ -1534,7 +2447,7 @@ class StaffManagerDialog(tk.Toplevel):
             # 必須項目のチェック
             if not name:
                 messagebox.showwarning("警告", "名前を入力してください")
-            return
+                return
         
             if not age:
                 messagebox.showwarning("警告", "年齢を入力してください")
@@ -1555,6 +2468,7 @@ class StaffManagerDialog(tk.Toplevel):
                 'dropbox_number': dropbox_number,
                 'work_days': work_days,
                 'work_hours': work_hours,
+                'notes': notes,
                 'is_active': True
             }
             
