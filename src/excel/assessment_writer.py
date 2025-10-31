@@ -7,6 +7,9 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# configをインポート（パスワード設定を取得するため）
+import config
+
 # Excel生成スクリプトをインポート
 from src.excel.excel_generator_with_password import generate_assessment_sheet
 
@@ -26,11 +29,13 @@ class AssessmentWriter:
         try:
             # Python スクリプトを直接実行
             print(f"📋 Python でファイルを生成中...")
+            # config.pyの設定からパスワードを取得
+            password = config.EXCEL_PASSWORD if config.EXCEL_PASSWORD else None
             result = generate_assessment_sheet(
                 template_path=str(self.template_path),
                 output_path=str(output_path),
                 data=data,
-                password=None  # パスワード保護なし
+                password=password  # config.pyで設定されたパスワードを使用
             )
             
             if result['success']:
