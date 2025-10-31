@@ -1144,9 +1144,14 @@ class SmartInputForm(tk.Toplevel):
                 save_location = "ローカル"
                 location_icon = "💾"
             
+            # パスワード入力ダイアログを表示
+            password = self.show_password_dialog()
+            if password is None:  # キャンセルされた場合
+                return None
+            
             # Excelファイル生成
             writer = AssessmentWriter(str(template_path))
-            writer.create_assessment_file(interview_data, assessment_data, output_path)
+            writer.create_assessment_file(interview_data, assessment_data, output_path, password=password)
             
             # 成功メッセージ
             message = (
