@@ -30,9 +30,6 @@ class MainApplication(tk.Tk):
         menubar.add_cascade(label="ファイル", menu=file_menu)
         file_menu.add_command(label="⚡ 新規面談記録", command=self.new_smart_interview)
         file_menu.add_separator()
-        file_menu.add_command(label="📝 手書きシートを生成", command=self.generate_handwriting_sheet)
-        file_menu.add_command(label="📷 写真から読み取り", command=self.import_from_photo)
-        file_menu.add_separator()
         file_menu.add_command(label="終了", command=self.quit)
         
         # 管理メニュー
@@ -62,7 +59,7 @@ class MainApplication(tk.Tk):
         # 画面入力モードボタン
         smart_btn = tk.Button(
             selection_frame,
-            text="⚡ 画面入力モード\n\n面談しながらチェック\nパソコンで直接入力\nアセスメントが即完成",
+            text="⚡ スマート面談\n\n面談しながらチェック\nパソコンで直接入力\nアセスメントが即完成",
             font=("游ゴシック", 12, "bold"),
             bg="#7ED321",
             fg="white",
@@ -71,19 +68,6 @@ class MainApplication(tk.Tk):
             command=lambda: self.start_mode(selection_frame, "smart")
         )
         smart_btn.pack(pady=8)
-        
-        # 写真読み取りモードボタン
-        photo_btn = tk.Button(
-            selection_frame,
-            text="📷 写真読み取りモード\n\n手書きシートを撮影\n写真から自動入力\nOCRで読み取り",
-            font=("游ゴシック", 12, "bold"),
-            bg="#3498db",
-            fg="white",
-            width=40,
-            height=5,
-            command=self.import_from_photo
-        )
-        photo_btn.pack(pady=8)
         
         # 支援員管理ボタン
         staff_btn = tk.Button(
@@ -224,52 +208,22 @@ class MainApplication(tk.Tk):
         except Exception as e:
             messagebox.showerror("エラー", f"支援員管理の起動中にエラーが発生しました：\n{str(e)}")
     
-    def show_about(self):
-        messagebox.showinfo(
-            "バージョン情報",
-            "不登校支援 - 初回アセスメント支援ツール\n"
-            "Version 3.0.0 (スマートモード搭載)\n\n"
-            "機能：\n"
-            "⚡ スマートモード（面談中に即完成・オフライン）\n"
-            "🔍 データ活用モード（過去データ活用・オフライン）\n"
-            "🤖 AI分析モード（Claude AI・オンライン）\n"
-            "👥 支援員管理・選択機能"
-        )
-    
-    
-
-    def open_staff_manager(self):
-        """支援員管理ダイアログを開く"""
-        try:
-            dialog = StaffManagerDialog(self)
-            dialog.wait_window()  # ダイアログが閉じるまで待機
-        except Exception as e:
-            messagebox.showerror("エラー", f"支援員管理の表示中にエラーが発生しました:\n{str(e)}")
 
     def show_help(self):
         """使い方を表示"""
         help_text = """
 不登校支援 - 初回アセスメント支援ツール
 
-【2つの入力モード】
+【スマート面談モード】
 
-📱 画面入力モード（パソコン入力）
-1. 「⚡ 画面入力モード」をクリック
+1. 「⚡ スマート面談」をクリック
 2. 面談しながらチェックボックスを選択
 3. 支援員を検索・選択（オプション）
 4. 「アセスメントシートを生成」をクリック
 5. Excelファイルが自動生成されます
 
-📷 写真読み取りモード（手書きシート）
-1. ファイルメニュー → 「📝 手書きシートを生成」
-2. Wordファイルを印刷して手書き記入
-3. 写真を撮影して「📷 写真読み取りモード」をクリック
-4. OCRで自動読み取り・確認
-5. アセスメントシートが自動生成されます
-
 【特徴】
 ・面談しながらチェックするだけ
-・手書きシートにも対応（OCR読み取り）
 ・アセスメント・報告書が即完成
 ・オフライン動作
 ・支援員検索機能付き
@@ -297,132 +251,6 @@ Version 1.0
 美幸AIスクール
         """
         messagebox.showinfo("バージョン情報", about_text)
-    
-    def generate_handwriting_sheet(self):
-        """手書きシートを生成"""
-        try:
-            from src.utils.handwriting_sheet_generator import create_handwriting_sheet
-            from tkinter import filedialog
-            
-            # 保存先を選択
-            output_path = filedialog.asksaveasfilename(
-                title="手書きシートの保存先を選択",
-                defaultextension=".docx",
-                filetypes=[("Wordファイル", "*.docx"), ("すべてのファイル", "*.*")]
-            )
-            
-            if output_path:
-                # 手書きシートを生成
-                create_handwriting_sheet(output_path)
-                
-                messagebox.showinfo(
-                    "完了",
-                    f"手書きシートを作成しました！\n\n{output_path}\n\n"
-                    "次のステップ：\n"
-                    "1. Wordでシートを開く\n"
-                    "2. 手書きで記入\n"
-                    "3. 写真を撮影\n"
-                    "4. 「写真から読み取り」で自動入力"
-                )
-        except Exception as e:
-            messagebox.showerror("エラー", f"手書きシートの生成に失敗しました:\n{str(e)}")
-    
-    def import_from_photo(self):
-        """写真から読み取り"""
-        try:
-            # 必要なライブラリのチェック
-            try:
-                import pytesseract
-                import cv2
-                from PIL import Image
-            except ImportError as ie:
-                missing_module = str(ie).split("'")[1] if "'" in str(ie) else "必要なライブラリ"
-                messagebox.showerror(
-                    "ライブラリエラー",
-                    f"必要なライブラリがインストールされていません。\n\n"
-                    f"エラー: {missing_module}\n\n"
-                    f"以下のコマンドでインストールしてください：\n"
-                    f"pip install pytesseract opencv-python Pillow"
-                )
-                return
-            
-            from tkinter import filedialog
-            from src.utils.ocr_processor import OCRProcessor
-            from src.ui.smart_input_form import SmartInputForm
-            
-            # 画像ファイルを選択
-            image_path = filedialog.askopenfilename(
-                title="手書きシートの写真を選択",
-                filetypes=[
-                    ("画像ファイル", "*.jpg *.jpeg *.png *.bmp"),
-                    ("すべてのファイル", "*.*")
-                ]
-            )
-            
-            if not image_path:
-                return
-            
-            # OCR処理
-            try:
-                messagebox.showinfo("処理中", "写真から読み取っています...")
-                
-                processor = OCRProcessor()
-                text, confidence = processor.extract_text_from_image(image_path)
-                
-                if not text.strip():
-                    messagebox.showwarning(
-                        "警告", 
-                        "写真からテキストを読み取れませんでした。\n\n"
-                        "対処方法：\n"
-                        "1. 写真が鮮明であることを確認\n"
-                        "2. 明るい場所で撮影\n"
-                        "3. 手書き文字が濃く、はっきり書かれているか確認"
-                    )
-                    return
-                
-                # データを解析
-                data = processor.parse_handwriting_sheet(text)
-                
-                if not data:
-                    messagebox.showwarning("警告", "データを正しく読み取れませんでした。")
-                    return
-                
-                # 入力フォームを開いてデータを設定
-                from src.ui.photo_input_form import PhotoInputForm
-                photo_form = PhotoInputForm(self, data, confidence)
-                
-                # OCRデータを保存するための参照を渡す
-                photo_form.parent_app = self
-                
-                photo_form.wait_window()
-                
-            except FileNotFoundError:
-                messagebox.showerror(
-                    "Tesseract OCR未インストール",
-                    "Tesseract OCRがインストールされていません。\n\n"
-                    "【インストール手順】\n"
-                    "1. 下記URLからダウンロード:\n"
-                    "   https://github.com/UB-Mannheim/tesseract/wiki\n\n"
-                    "2. インストール時に「Additional language data」で\n"
-                    "   「Japanese」にチェックを入れてください\n\n"
-                    "3. インストール後、アプリを再起動してください"
-                )
-            except Exception as ocr_error:
-                messagebox.showerror(
-                    "OCRエラー",
-                    f"OCR処理中にエラーが発生しました：\n\n{str(ocr_error)}\n\n"
-                    "【対処方法】\n"
-                    "1. Tesseractが正しくインストールされているか確認\n"
-                    "2. 写真が鮮明で文字がはっきり見えるか確認\n"
-                    "3. 明るい場所で撮影された写真か確認"
-                )
-                import traceback
-                traceback.print_exc()
-            
-        except Exception as e:
-            messagebox.showerror("エラー", f"写真読み取りに失敗しました:\n{str(e)}")
-            import traceback
-            traceback.print_exc()
 
 
 if __name__ == "__main__":
