@@ -270,15 +270,25 @@ class PreviewWindow(tk.Toplevel):
         copy_btn.pack(pady=10)
     
     def export_assessment(self):
+        """アセスメントシートを出力（Dropbox対応版）"""
         from ..excel.assessment_writer import AssessmentWriter
+        from pathlib import Path
+        import config
         
         initials = self.interview_data.get('児童イニシャル', 'XX')
         date_str = self.interview_data['面談実施日'].strftime('%Y%m%d')
         filename = f"アセスメントシート_{initials}_{date_str}.xlsx"
         
-        output_dir = Path("output")
-        output_dir.mkdir(exist_ok=True)
-        output_path = output_dir / filename
+        # 保存先を決定（Dropbox優先）
+        output_path = config.OUTPUT_DIR / filename
+        
+        # 保存先の種類を判定
+        if config.USE_DROPBOX and config.check_dropbox_available():
+            save_location = "Dropbox"
+            location_icon = "☁️"
+        else:
+            save_location = "ローカル"
+            location_icon = "💾"
         
         try:
             writer = AssessmentWriter()
@@ -288,13 +298,25 @@ class PreviewWindow(tk.Toplevel):
                 output_path
             )
             
-            messagebox.showinfo(
-                "出力完了",
-                f"アセスメントシートを作成しました！\n\n{output_path}"
+            # 成功メッセージ
+            message = (
+                f"アセスメントシートを作成しました！\n\n"
+                f"{location_icon} 保存先: {save_location}\n"
+                f"📁 {output_path}\n\n"
             )
             
+            # Dropboxの場合は追加情報
+            if save_location == "Dropbox":
+                message += (
+                    "✅ Dropboxで自動的に同期されます\n"
+                    "👥 チームメンバーも閲覧可能です"
+                )
+            
+            messagebox.showinfo("出力完了", message)
+            
+            # ファイルを開く
             self.open_file(output_path)
-        
+    
         except Exception as e:
             messagebox.showerror("エラー", f"出力に失敗しました:\n{str(e)}")
     
