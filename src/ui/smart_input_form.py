@@ -150,6 +150,7 @@ class PlaceholderTextArea:
         """ドロップダウンから選択された時"""
         selected = self.combo.get()
         if selected:
+            # 選択値をそのまま挿入（選択肢には既に「例：」が含まれていない）
             self.text_widget.delete("1.0", tk.END)
             self.text_widget.insert("1.0", selected)
             self.inner_text.config(foreground=self.normal_color)
@@ -319,11 +320,11 @@ class SmartInputForm(tk.Toplevel):
             wrap=tk.WORD,
             placeholder="例：転校してから不登校が始まった、友達関係の問題が原因",
             options=[
-                "例：転校してから不登校が始まった、友達関係の問題が原因",
-                "例：いじめが原因で不登校になった",
-                "例：朝起きられず、学校に行けなくなった",
-                "例：学業不振が原因で学校に行きたくない",
-                "例：人間関係がうまくいかず、学校に行けなくなった"
+                "転校してから不登校が始まった、友達関係の問題が原因",
+                "いじめが原因で不登校になった",
+                "朝起きられず、学校に行けなくなった",
+                "学業不振が原因で学校に行きたくない",
+                "人間関係がうまくいかず、学校に行けなくなった"
             ]
         )
         self.truancy_detail.grid(row=2, column=1, columnspan=2, sticky="w", padx=5)
@@ -896,11 +897,11 @@ class SmartInputForm(tk.Toplevel):
             wrap=tk.WORD,
             placeholder="例：生活リズムを整えたい、友達を作りたい",
             options=[
-                "例：生活リズムを整えたい、友達を作りたい",
-                "例：学校に行けるようになりたい、勉強を頑張りたい",
-                "例：自信を持ちたい、自分の気持ちを伝えられるようになりたい",
-                "例：規則正しい生活を送りたい、家族関係を改善したい",
-                "例：将来の目標を見つけたい、自分らしく生きたい"
+                "生活リズムを整えたい、友達を作りたい",
+                "学校に行けるようになりたい、勉強を頑張りたい",
+                "自信を持ちたい、自分の気持ちを伝えられるようになりたい",
+                "規則正しい生活を送りたい、家族関係を改善したい",
+                "将来の目標を見つけたい、自分らしく生きたい"
             ]
         )
         self.support_goals_text.grid(row=2, column=1, columnspan=3, sticky="w", padx=5)
@@ -1084,53 +1085,91 @@ class SmartInputForm(tk.Toplevel):
         self.on_complete_callback(interview_data, assessment_data)
     
     def generate_excel_file(self, interview_data, assessment_data):
-        """Excelファイルを生成"""
+        """Excelファイルを生成（Dropbox対応版）"""
         try:
             from src.excel.assessment_writer import AssessmentWriter
+            import config
             
-            # テンプレートファイルを選択
-            template_path = filedialog.askopenfilename(
-                title="アセスメントシートのテンプレートを選択してください",
-                filetypes=[
-                    ("Excelファイル", "*.xlsx"),
-                    ("すべてのファイル", "*.*")
-                ],
-                initialdir=str(Path.cwd() / "templates")
-            )
+            # テンプレートファイルのパスを取得
+            template_path = config.TEMPLATE_DIR / "アセスメントシート原本.xlsx"
             
-            if not template_path:
-                messagebox.showwarning("警告", "テンプレートファイルが選択されませんでした。")
-                return
+            if not template_path.exists():
+                messagebox.showerror("エラー", f"テンプレートファイルが見つかりません:\n{template_path}")
+                return None
             
-            # 保存場所とファイル名を選択
+            # ファイル名を生成
             child_name = interview_data.get('児童氏名', '未記録')
             date_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-            default_filename = f"アセスメントシート_{child_name}_{date_str}.xlsx"
+            filename = f"アセスメントシート_{child_name}_{date_str}.xlsx"
+            
+            # 保存先を選択（ダイアログを表示）
+            # 初期フォルダを決定（Dropbox優先、なければダウンロードフォルダ）
+            if config.USE_DROPBOX and config.check_dropbox_available():
+                dropbox_path = config.get_dropbox_path()
+                initial_dir = str(dropbox_path)
+                dialog_title = "アセスメントシートの保存場所を選択してください（Dropbox）"
+            else:
+                # ローカル保存の場合はダウンロードフォルダを初期フォルダに
+                downloads_dir = Path.home() / "Downloads"
+                initial_dir = str(downloads_dir)
+                dialog_title = "アセスメントシートの保存場所を選択してください"
             
             output_path = filedialog.asksaveasfilename(
-                title="アセスメントシートの保存場所を選択してください",
+                title=dialog_title,
                 defaultextension=".xlsx",
                 filetypes=[
                     ("Excelファイル", "*.xlsx"),
                     ("すべてのファイル", "*.*")
                 ],
-                initialfile=default_filename,
-                initialdir=str(Path.home() / "Desktop")
+                initialfile=filename,
+                initialdir=initial_dir
             )
             
             if not output_path:
                 messagebox.showwarning("警告", "保存場所が選択されませんでした。")
-                return
+                return None
+            
+            output_path = Path(output_path)
+            
+            # 保存先の種類を判定
+            if config.USE_DROPBOX and config.check_dropbox_available():
+                dropbox_path = config.get_dropbox_path()
+                if dropbox_path and str(output_path).startswith(str(dropbox_path)):
+                    save_location = "Dropbox"
+                    location_icon = "☁️"
+                else:
+                    save_location = "ローカル"
+                    location_icon = "💾"
+            else:
+                save_location = "ローカル"
+                location_icon = "💾"
             
             # Excelファイル生成
             writer = AssessmentWriter(str(template_path))
             writer.create_assessment_file(interview_data, assessment_data, output_path)
+            
+            # 成功メッセージ
+            message = (
+                f"アセスメントシートを作成しました！\n\n"
+                f"{location_icon} 保存先: {save_location}\n"
+                f"📁 {output_path}\n\n"
+            )
+            
+            # Dropboxの場合は追加情報
+            if save_location == "Dropbox":
+                message += (
+                    "✅ Dropboxで自動的に同期されます\n"
+                    "👥 チームメンバーも閲覧可能です"
+                )
+            
+            messagebox.showinfo("出力完了", message)
             
             print(f"✅ Excelファイル生成完了: {output_path}")
             return output_path
             
         except Exception as e:
             print(f"❌ Excelファイル生成エラー: {str(e)}")
+            messagebox.showerror("エラー", f"Excelファイルの生成に失敗しました:\n{str(e)}")
             raise
     
     def copy_report_to_clipboard(self, interview_data, assessment_data):
@@ -1338,7 +1377,7 @@ class SmartInputForm(tk.Toplevel):
                 '希望の時間帯': self.preferred_time_entry.get().strip(),
                 '希望の場所': self.preferred_location_entry.get().strip(),
                 '希望の支援員': self.preferred_supporter_entry.get().strip(),
-                '解決したいこと': self.support_goals_text.get("1.0", tk.END).strip()
+                '解決したいこと': self.support_goals_text.get()
             }
         }
         
@@ -1371,7 +1410,7 @@ class SmartInputForm(tk.Toplevel):
         # 不登校
         issues["不登校"] = {
             "該当": self.truancy_check.get(),
-            "詳細": f"{self.attendance_var.get()}。{self.truancy_detail.get('1.0', tk.END).strip()}"
+            "詳細": f"{self.attendance_var.get()}。{self.truancy_detail.get()}"
         }
         
         # 引きこもり
@@ -1517,5 +1556,5 @@ class SmartInputForm(tk.Toplevel):
             'preferred_day': ','.join(selected_days),
             'preferred_time': self.preferred_time_entry.get().strip(),
             'preferred_location': self.preferred_location_entry.get().strip(),
-            'interests': self.support_goals_text.get("1.0", tk.END).strip()
+            'interests': self.support_goals_text.get()
         }
