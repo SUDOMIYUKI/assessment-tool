@@ -85,53 +85,65 @@ class PlaceholderTextArea:
         
         # テキストエリアを作成
         self.text_widget = scrolledtext.ScrolledText(self.frame, **kwargs)
-        self.text_widget.pack(side="left", fill="both", expand=True)
+        self.text_widget.pack(side="top", fill="both", expand=True)
         
-        # ドロップダウンボタンを追加
+        # ScrolledText内部のTextウィジェットにアクセス
+        # ScrolledTextはFrameを継承しており、内部にTextウィジェットを持つ
+        self.inner_text = None
+        for child in self.text_widget.winfo_children():
+            if isinstance(child, tk.Text):
+                self.inner_text = child
+                break
+        
+        # もし見つからない場合は、ScrolledText自体を使用
+        if self.inner_text is None:
+            self.inner_text = self.text_widget
+        
+        # ドロップダウンボタンを追加（テキストエリアの下に配置）
         if self.options:
             self.combo_frame = tk.Frame(self.frame)
-            self.combo_frame.pack(side="left", padx=(5, 0))
-            self.combo = ttk.Combobox(self.combo_frame, values=self.options, width=15, state="readonly")
-            self.combo.pack(side="top", pady=(0, 5))
+            self.combo_frame.pack(side="top", fill="x", pady=(5, 0))
+            ttk.Label(self.combo_frame, text="例から選択:", font=("游ゴシック", 9)).pack(side="left", padx=(0, 5))
+            self.combo = ttk.Combobox(self.combo_frame, values=self.options, width=50, state="readonly", font=("游ゴシック", 9))
+            self.combo.pack(side="left", fill="x", expand=True)
             self.combo.bind("<<ComboboxSelected>>", self._on_option_selected)
-            ttk.Label(self.combo_frame, text="例から選択", font=("", 8)).pack(side="top")
         else:
             self.combo = None
         
         # プレースホルダーテキストを表示
         if placeholder:
             self.text_widget.insert("1.0", placeholder)
-            self.text_widget.text.config(foreground=self.placeholder_color)
+            self.inner_text.config(foreground=self.placeholder_color)
         
         # イベントバインド
-        self.text_widget.text.bind("<FocusIn>", self._on_focus_in)
-        self.text_widget.text.bind("<FocusOut>", self._on_focus_out)
-        self.text_widget.text.bind("<KeyPress>", self._on_key_press)
-        self.text_widget.text.bind("<Button-1>", self._on_click)
+        self.inner_text.bind("<FocusIn>", self._on_focus_in)
+        self.inner_text.bind("<FocusOut>", self._on_focus_out)
+        self.inner_text.bind("<KeyPress>", self._on_key_press)
+        self.inner_text.bind("<Button-1>", self._on_click)
     
     def _on_focus_in(self, event):
         if self.is_placeholder:
             self.text_widget.delete("1.0", tk.END)
-            self.text_widget.text.config(foreground=self.normal_color)
+            self.inner_text.config(foreground=self.normal_color)
             self.is_placeholder = False
     
     def _on_focus_out(self, event):
         current_value = self.text_widget.get("1.0", tk.END).strip()
         if not current_value and self.placeholder:
             self.text_widget.insert("1.0", self.placeholder)
-            self.text_widget.text.config(foreground=self.placeholder_color)
+            self.inner_text.config(foreground=self.placeholder_color)
             self.is_placeholder = True
     
     def _on_key_press(self, event):
         if self.is_placeholder:
             self.text_widget.delete("1.0", tk.END)
-            self.text_widget.text.config(foreground=self.normal_color)
+            self.inner_text.config(foreground=self.normal_color)
             self.is_placeholder = False
     
     def _on_click(self, event):
         if self.is_placeholder:
             self.text_widget.delete("1.0", tk.END)
-            self.text_widget.text.config(foreground=self.normal_color)
+            self.inner_text.config(foreground=self.normal_color)
             self.is_placeholder = False
     
     def _on_option_selected(self, event):
@@ -140,7 +152,7 @@ class PlaceholderTextArea:
         if selected:
             self.text_widget.delete("1.0", tk.END)
             self.text_widget.insert("1.0", selected)
-            self.text_widget.text.config(foreground=self.normal_color)
+            self.inner_text.config(foreground=self.normal_color)
             self.is_placeholder = False
     
     def get(self):
@@ -320,7 +332,7 @@ class SmartInputForm(tk.Toplevel):
         def _on_truancy_mousewheel(event):
             self.truancy_detail.text_widget.yview_scroll(int(-1*(event.delta/120)), "units")
             return "break"
-        self.truancy_detail.text_widget.text.bind("<MouseWheel>", _on_truancy_mousewheel)
+        self.truancy_detail.inner_text.bind("<MouseWheel>", _on_truancy_mousewheel)
         
         # === セクション3：生活状況 ===
         life_frame = ttk.LabelFrame(scrollable_frame, text="🏠 生活状況", padding=15)
@@ -897,7 +909,7 @@ class SmartInputForm(tk.Toplevel):
         def _on_support_goals_mousewheel(event):
             self.support_goals_text.text_widget.yview_scroll(int(-1*(event.delta/120)), "units")
             return "break"
-        self.support_goals_text.text_widget.text.bind("<MouseWheel>", _on_support_goals_mousewheel)
+        self.support_goals_text.inner_text.bind("<MouseWheel>", _on_support_goals_mousewheel)
         
         # === セクション10：当日の様子（自由記述） ===
         memo_frame = ttk.LabelFrame(scrollable_frame, text="📝 当日の様子・その他メモ", padding=15)
