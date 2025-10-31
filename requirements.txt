@@ -4,4 +4,5 @@ pykakasi>=2.2.1
 cryptography>=42.0.5
 python-dotenv>=1.0.1
 pyperclip>=1.8.2
+msoffcrypto-tool>=4.11.0
 
