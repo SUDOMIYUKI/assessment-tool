@@ -236,10 +236,14 @@ class SmartInputForm(tk.Toplevel):
         self.child_name_entry = ttk.Entry(basic_frame, width=20)
         self.child_name_entry.grid(row=row, column=1, sticky="w", padx=5)
         
-        ttk.Label(basic_frame, text="性別:").grid(row=row, column=2, sticky="w", padx=(20, 5))
+        ttk.Label(basic_frame, text="イニシャル:").grid(row=row, column=2, sticky="w", padx=(20, 5))
+        self.initial_entry = ttk.Entry(basic_frame, width=10)
+        self.initial_entry.grid(row=row, column=3, sticky="w", padx=5)
+        
+        ttk.Label(basic_frame, text="性別:").grid(row=row, column=4, sticky="w", padx=(20, 5))
         self.gender_var = tk.StringVar(value="男性")
-        ttk.Radiobutton(basic_frame, text="男性", variable=self.gender_var, value="男性").grid(row=row, column=3, sticky="w")
-        ttk.Radiobutton(basic_frame, text="女性", variable=self.gender_var, value="女性").grid(row=row, column=4, sticky="w")
+        ttk.Radiobutton(basic_frame, text="男性", variable=self.gender_var, value="男性").grid(row=row, column=5, sticky="w")
+        ttk.Radiobutton(basic_frame, text="女性", variable=self.gender_var, value="女性").grid(row=row, column=6, sticky="w")
         
         row += 1
         ttk.Label(basic_frame, text="保護者氏名:").grid(row=row, column=0, sticky="w", pady=5)
@@ -255,6 +259,15 @@ class SmartInputForm(tk.Toplevel):
         self.grade_spinbox = ttk.Spinbox(basic_frame, from_=1, to=12, width=5)
         self.grade_spinbox.set("2")
         self.grade_spinbox.grid(row=row, column=4, sticky="w")
+        
+        row += 1
+        ttk.Label(basic_frame, text="区名:").grid(row=row, column=0, sticky="w", pady=5)
+        self.district_entry = ttk.Entry(basic_frame, width=20)
+        self.district_entry.grid(row=row, column=1, sticky="w", padx=5)
+        
+        ttk.Label(basic_frame, text="ケース番号:").grid(row=row, column=2, sticky="w", padx=(20, 5))
+        self.case_number_entry = ttk.Entry(basic_frame, width=15)
+        self.case_number_entry.grid(row=row, column=3, columnspan=2, sticky="w")
         
         row += 1
         ttk.Label(basic_frame, text="担当支援員:").grid(row=row, column=0, sticky="w", pady=5)
@@ -1097,10 +1110,29 @@ class SmartInputForm(tk.Toplevel):
                 messagebox.showerror("エラー", f"テンプレートファイルが見つかりません:\n{template_path}")
                 return None
             
-            # ファイル名を生成
-            child_name = interview_data.get('児童氏名', '未記録')
-            date_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"アセスメントシート_{child_name}_{date_str}.xlsx"
+            # ファイル名を生成（形式：アセスメントシート2025鶴見区2001）
+            # 西暦を取得（面談実施日から）
+            interview_date = interview_data.get('面談実施日')
+            if isinstance(interview_date, datetime):
+                year = interview_date.year
+            else:
+                try:
+                    year = datetime.strptime(str(interview_date), '%Y/%m/%d').year
+                except:
+                    year = datetime.now().year
+            
+            # 区名とケース番号を取得
+            district = interview_data.get('区名', '').strip() or '未設定'
+            case_number = interview_data.get('ケース番号', '').strip()
+            initial = interview_data.get('児童イニシャル', '').strip() or ''
+            
+            # ケース番号が未記入の場合は「新規+イニシャル」を使用
+            if not case_number:
+                case_part = f"新規{initial}" if initial else "新規"
+            else:
+                case_part = case_number
+            
+            filename = f"アセスメントシート{year}{district}{case_part}.xlsx"
             
             # 保存先を選択（ダイアログを表示）
             # 初期フォルダを決定（Dropbox優先、なければダウンロードフォルダ）
@@ -1176,6 +1208,125 @@ class SmartInputForm(tk.Toplevel):
             print(f"❌ Excelファイル生成エラー: {str(e)}")
             messagebox.showerror("エラー", f"Excelファイルの生成に失敗しました:\n{str(e)}")
             raise
+    
+    def show_password_dialog(self):
+        """パスワード入力ダイアログを表示"""
+        import config  # configをインポート
+        
+        password_dialog = tk.Toplevel(self)
+        password_dialog.title("パスワード設定")
+        password_dialog.geometry("400x200")
+        password_dialog.transient(self)
+        password_dialog.grab_set()
+        
+        # 中央に配置
+        password_dialog.update_idletasks()
+        x = (password_dialog.winfo_screenwidth() // 2) - (password_dialog.winfo_width() // 2)
+        y = (password_dialog.winfo_screenheight() // 2) - (password_dialog.winfo_height() // 2)
+        password_dialog.geometry(f'+{x}+{y}')
+        
+        password_var = tk.StringVar()
+        password_result = {'password': None, 'cancelled': False}
+        
+        # エリア選択
+        area_frame = tk.Frame(password_dialog, padx=20, pady=10)
+        area_frame.pack(fill="x")
+        tk.Label(area_frame, text="エリア:", font=("游ゴシック", 10)).pack(side="left", padx=5)
+        area_var = tk.StringVar(value="東エリア")
+        area_combo = ttk.Combobox(
+            area_frame,
+            textvariable=area_var,
+            values=["東エリア", "南エリア", "その他"],
+            state="readonly",
+            width=15,
+            font=("游ゴシック", 10)
+        )
+        area_combo.pack(side="left", padx=5)
+        
+        # パスワード入力
+        password_frame = tk.Frame(password_dialog, padx=20, pady=10)
+        password_frame.pack(fill="x")
+        tk.Label(password_frame, text="パスワード:", font=("游ゴシック", 10)).pack(side="left", padx=5)
+        password_entry = tk.Entry(
+            password_frame,
+            textvariable=password_var,
+            show="*",
+            width=20,
+            font=("游ゴシック", 10)
+        )
+        password_entry.pack(side="left", padx=5)
+        
+        def on_area_changed(event=None):
+            """エリアが変更されたときにパスワードを自動入力"""
+            selected_area = area_var.get()
+            area_password = config.AREA_PASSWORDS.get(selected_area)
+            if area_password:
+                password_var.set(area_password)
+            else:
+                password_var.set("")
+        
+        area_combo.bind('<<ComboboxSelected>>', on_area_changed)
+        # 初期値を設定
+        on_area_changed()
+        password_entry.focus()
+        
+        # 説明
+        info_frame = tk.Frame(password_dialog, padx=20, pady=5)
+        info_frame.pack(fill="x")
+        tk.Label(
+            info_frame,
+            text="※ パスワードを空欄にすると保護なしで保存されます",
+            font=("游ゴシック", 9),
+            fg="gray"
+        ).pack()
+        
+        # ボタン
+        button_frame = tk.Frame(password_dialog, padx=20, pady=10)
+        button_frame.pack()
+        
+        def save_password():
+            password_result['password'] = password_var.get().strip()
+            if not password_result['password']:
+                password_result['password'] = None
+            password_dialog.destroy()
+        
+        def cancel_password():
+            password_result['cancelled'] = True
+            password_dialog.destroy()
+        
+        tk.Button(
+            button_frame,
+            text="保存",
+            font=("游ゴシック", 10, "bold"),
+            bg="#27ae60",
+            fg="white",
+            command=save_password,
+            padx=20,
+            pady=5
+        ).pack(side="left", padx=5)
+        
+        tk.Button(
+            button_frame,
+            text="キャンセル",
+            font=("游ゴシック", 10),
+            bg="#95a5a6",
+            fg="white",
+            command=cancel_password,
+            padx=20,
+            pady=5
+        ).pack(side="left", padx=5)
+        
+        # Enterキーで保存
+        password_entry.bind('<Return>', lambda e: save_password())
+        password_entry.bind('<Escape>', lambda e: cancel_password())
+        
+        # ダイアログが閉じられるまで待機
+        password_dialog.wait_window()
+        
+        if password_result['cancelled']:
+            return None
+        
+        return password_result['password']
     
     def copy_report_to_clipboard(self, interview_data, assessment_data):
         """報告書内容をクリップボードにコピー"""
@@ -1361,6 +1512,7 @@ class SmartInputForm(tk.Toplevel):
         """入力データを収集"""
         data = {
             '児童氏名': self.child_name_entry.get().strip(),
+            '児童イニシャル': self.initial_entry.get().strip(),
             '保護者氏名': self.guardian_name_entry.get().strip(),
             '性別': self.gender_var.get(),
             '学校名': self.school_entry.get().strip(),
@@ -1368,6 +1520,8 @@ class SmartInputForm(tk.Toplevel):
             '家族構成': self.family_structure_entry.get().strip(),
             '趣味・好きなこと': self.hobbies_entry.get().strip(),
             'ひとり親世帯': self.single_parent_var.get(),
+            '区名': self.district_entry.get().strip(),
+            'ケース番号': self.case_number_entry.get().strip(),
             '担当支援員': self.supporter_entry.get().strip(),
             '面談実施日': datetime.strptime(
                 self.interview_date_entry.get(),
