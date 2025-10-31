@@ -45,6 +45,7 @@ class StaffManager:
             cursor.execute('ALTER TABLE staff ADD COLUMN case_time TEXT')
             cursor.execute('ALTER TABLE staff ADD COLUMN case_frequency TEXT')
             cursor.execute('ALTER TABLE staff ADD COLUMN case_location TEXT')
+            cursor.execute('ALTER TABLE staff ADD COLUMN notes TEXT')
         except sqlite3.OperationalError:
             # カラムが既に存在する場合は無視
             pass
@@ -124,6 +125,7 @@ class StaffManager:
             case_time = staff_data.get('case_time')
             case_frequency = staff_data.get('case_frequency')
             case_location = staff_data.get('case_location')
+            notes = staff_data.get('notes')
         else:
             # 個別引数の場合（後方互換性のため）
             name = kwargs.get('name')
@@ -141,14 +143,15 @@ class StaffManager:
             case_time = kwargs.get('case_time')
             case_frequency = kwargs.get('case_frequency')
             case_location = kwargs.get('case_location')
+            notes = kwargs.get('notes')
         
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT INTO staff (name, age, gender, region, hobbies_skills, previous_job, dropbox_number, work_days, work_hours, case_district, case_number, case_day, case_time, case_frequency, case_location)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (name, age, gender, region, hobbies_skills, previous_job, dropbox_number, work_days, work_hours, case_district, case_number, case_day, case_time, case_frequency, case_location))
+            INSERT INTO staff (name, age, gender, region, hobbies_skills, previous_job, dropbox_number, work_days, work_hours, case_district, case_number, case_day, case_time, case_frequency, case_location, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, age, gender, region, hobbies_skills, previous_job, dropbox_number, work_days, work_hours, case_district, case_number, case_day, case_time, case_frequency, case_location, notes))
         
         staff_id = cursor.lastrowid
         conn.commit()
@@ -199,7 +202,7 @@ class StaffManager:
         cursor = conn.cursor()
         
         # 更新可能なフィールド
-        updatable_fields = ['name', 'age', 'gender', 'region', 'hobbies_skills', 'previous_job', 'dropbox_number', 'work_days', 'work_hours', 'case_district', 'case_number', 'case_day', 'case_time', 'case_frequency', 'case_location', 'is_active']
+        updatable_fields = ['name', 'age', 'gender', 'region', 'hobbies_skills', 'previous_job', 'dropbox_number', 'work_days', 'work_hours', 'case_district', 'case_number', 'case_day', 'case_time', 'case_frequency', 'case_location', 'notes', 'is_active']
         
         update_parts = []
         values = []
@@ -421,6 +424,8 @@ class StaffManager:
                 district_id INTEGER NOT NULL,
                 phone_number TEXT,
                 child_name TEXT,
+                child_last_name TEXT,
+                child_first_name TEXT,
                 schedule_day TEXT,
                 schedule_time TEXT,
                 location TEXT,
@@ -433,6 +438,14 @@ class StaffManager:
                 FOREIGN KEY (district_id) REFERENCES districts(id)
             )
         ''')
+        
+        # 既存のテーブルに新しいカラムを追加（マイグレーション）
+        try:
+            cursor.execute('ALTER TABLE cases ADD COLUMN child_last_name TEXT')
+            cursor.execute('ALTER TABLE cases ADD COLUMN child_first_name TEXT')
+        except sqlite3.OperationalError:
+            # カラムが既に存在する場合は無視
+            pass
         
         # 支援員とケースの関連テーブル
         cursor.execute('''
@@ -531,9 +544,9 @@ class StaffManager:
             staff_id_int = int(staff_id)
             cursor.execute('''
                 SELECT 
-                    c.id, c.case_number, d.name as district_name,
-                    c.phone_number, c.child_name, c.schedule_day,
-                    c.schedule_time, c.location, c.first_meeting_date,
+                    c.id, c.case_number, c.district_id, d.name as district_name,
+                    c.phone_number, c.child_name, c.child_last_name, c.child_first_name,
+                    c.schedule_day, c.schedule_time, c.location, c.first_meeting_date,
                     c.frequency, c.notes
                 FROM cases c
                 JOIN staff_cases sc ON c.id = sc.case_id
@@ -560,18 +573,24 @@ class StaffManager:
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
         
-        # ケースを作成
+        # ケースを作成（苗字と下の名前を結合してchild_nameにも保存）
+        child_last_name = case_data.get('child_last_name', '').strip()
+        child_first_name = case_data.get('child_first_name', '').strip()
+        child_name = f"{child_last_name} {child_first_name}".strip() if (child_last_name or child_first_name) else ''
+        
         cursor.execute('''
             INSERT INTO cases 
-            (case_number, district_id, phone_number, child_name, 
+            (case_number, district_id, phone_number, child_name, child_last_name, child_first_name,
              schedule_day, schedule_time, location, first_meeting_date, 
              frequency, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             case_data.get('case_number'),
             case_data.get('district_id'),
             case_data.get('phone_number'),
-            case_data.get('child_name'),
+            child_name,
+            child_last_name,
+            child_first_name,
             case_data.get('schedule_day'),
             case_data.get('schedule_time'),
             case_data.get('location'),
@@ -588,13 +607,390 @@ class StaffManager:
             VALUES (?, ?)
         ''', (staff_id, case_id))
         
+        # スケジュールエントリを作成（ケースの曜日・時間情報から）
+        schedule_day = case_data.get('schedule_day', '')
+        schedule_time = case_data.get('schedule_time', '')
+        location = case_data.get('location', '')
+        
+        if schedule_day and schedule_time:
+            # 曜日のマッピング
+            day_mapping = {
+                '月': '月',
+                '火': '火',
+                '水': '水',
+                '木': '木',
+                '金': '金'
+            }
+            
+            # 時間の解析（「14:00」または「14:00-16:00」形式）
+            # 全角コロン（：）や波線（～）を半角に変換
+            schedule_time = schedule_time.replace('：', ':').replace('～', '-').replace('~', '-').strip()
+            
+            if '-' in schedule_time:
+                # 範囲形式（例: 「14:00-16:00」）
+                time_parts = schedule_time.split('-')
+                start_time = time_parts[0].strip()
+                end_time = time_parts[1].strip()
+            else:
+                # 単一時間形式（例: 「14:00」）- 1時間のセッションとして扱う
+                start_time = schedule_time.strip()
+                # 終了時間を計算（1時間後）
+                try:
+                    # コロンで分割して時間と分を取得
+                    if ':' in start_time:
+                        hour, minute = start_time.split(':')
+                        hour_int = int(hour)
+                        minute_int = int(minute) if minute else 0
+                    else:
+                        # コロンがない場合は時間のみ
+                        hour_int = int(start_time)
+                        minute_int = 0
+                        start_time = f"{hour_int:02d}:{minute_int:02d}"
+                    
+                    end_hour = hour_int + 1
+                    end_time = f"{end_hour:02d}:{minute_int:02d}"
+                except Exception as e:
+                    print(f"⚠️ 時間解析エラー: {e}, 時間: {start_time}, デフォルトで1時間後に設定")
+                    # エラー時は開始時間から1時間後を設定
+                    try:
+                        hour_int = int(start_time.split(':')[0]) if ':' in start_time else int(start_time)
+                        end_hour = hour_int + 1
+                        end_time = f"{end_hour:02d}:00"
+                    except:
+                        # 最後のフォールバック：デフォルトで1時間後
+                        end_time = f"{(int(start_time.replace(':', '')) // 100 + 1):02d}:00" if start_time else "15:00"
+            
+            # 各曜日ごとにスケジュールエントリを作成
+            for day_char in schedule_day:
+                if day_char in day_mapping:
+                    day_of_week = day_mapping[day_char]
+                    try:
+                        # schedulesテーブルの存在を確認
+                        cursor.execute('''
+                            SELECT name FROM sqlite_master 
+                            WHERE type='table' AND name='schedules'
+                        ''')
+                        if not cursor.fetchone():
+                            print("⚠️ schedulesテーブルが存在しません。init_enhanced_tablesを呼び出してください。")
+                            # テーブルが存在しない場合は作成を試みる
+                            self.init_enhanced_tables()
+                        
+                        cursor.execute('''
+                            INSERT INTO schedules 
+                            (staff_id, case_id, day_of_week, start_time, end_time, location, schedule_type, is_active)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            staff_id,
+                            case_id,
+                            day_of_week,
+                            start_time,
+                            end_time,
+                            location,
+                            'ケース',
+                            1
+                        ))
+                        print(f"✅ スケジュールエントリ作成: {day_of_week} {start_time}-{end_time}")
+                    except Exception as e:
+                        print(f"❌ スケジュールエントリ作成エラー: {e}")
+                        import traceback
+                        traceback.print_exc()
+        
         conn.commit()
         conn.close()
         
         return case_id
+    
+    def get_case_by_id(self, case_id):
+        """ケースIDからケース情報を取得"""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                SELECT 
+                    c.id, c.case_number, c.district_id, d.name as district_name, a.name as area_name,
+                    c.phone_number, c.child_name, c.child_last_name, c.child_first_name,
+                    c.schedule_day, c.schedule_time, c.location, c.first_meeting_date,
+                    c.frequency, c.notes
+                FROM cases c
+                LEFT JOIN districts d ON c.district_id = d.id
+                LEFT JOIN areas a ON d.area_id = a.id
+                WHERE c.id = ? AND c.is_active = 1
+            ''', (case_id,))
+            
+            columns = [desc[0] for desc in cursor.description]
+            row = cursor.fetchone()
+            if row:
+                case = dict(zip(columns, row))
+            else:
+                case = None
+        except Exception as e:
+            print(f"get_case_by_id エラー: {e}")
+            case = None
+        finally:
+            conn.close()
+        
+        return case
+    
+    def update_case_to_staff(self, case_id, case_data):
+        """ケース情報を更新"""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        try:
+            # ケース情報を更新（苗字と下の名前を結合してchild_nameにも保存）
+            child_last_name = case_data.get('child_last_name', '').strip()
+            child_first_name = case_data.get('child_first_name', '').strip()
+            child_name = f"{child_last_name} {child_first_name}".strip() if (child_last_name or child_first_name) else ''
+            
+            cursor.execute('''
+                UPDATE cases 
+                SET case_number = ?,
+                    district_id = ?,
+                    phone_number = ?,
+                    child_name = ?,
+                    child_last_name = ?,
+                    child_first_name = ?,
+                    schedule_day = ?,
+                    schedule_time = ?,
+                    location = ?,
+                    first_meeting_date = ?,
+                    frequency = ?,
+                    notes = ?
+                WHERE id = ?
+            ''', (
+                case_data.get('case_number'),
+                case_data.get('district_id'),
+                case_data.get('phone_number'),
+                child_name,
+                child_last_name,
+                child_first_name,
+                case_data.get('schedule_day'),
+                case_data.get('schedule_time'),
+                case_data.get('location'),
+                case_data.get('first_meeting_date'),
+                case_data.get('frequency'),
+                case_data.get('notes'),
+                case_id
+            ))
+            
+            # 既存のスケジュールエントリを削除
+            cursor.execute('''
+                DELETE FROM schedules 
+                WHERE case_id = ?
+            ''', (case_id,))
+            
+            # 新しいスケジュールエントリを作成
+            schedule_day = case_data.get('schedule_day', '')
+            schedule_time = case_data.get('schedule_time', '')
+            location = case_data.get('location', '')
+            
+            # ケースに紐づく支援員IDを取得
+            cursor.execute('''
+                SELECT staff_id FROM staff_cases 
+                WHERE case_id = ?
+                LIMIT 1
+            ''', (case_id,))
+            staff_result = cursor.fetchone()
+            staff_id = staff_result[0] if staff_result else None
+            
+            if schedule_day and schedule_time and staff_id:
+                # 曜日のマッピング
+                day_mapping = {
+                    '月': '月',
+                    '火': '火',
+                    '水': '水',
+                    '木': '木',
+                    '金': '金'
+                }
+                
+                # 時間の解析（全角コロンや波線を半角に変換）
+                schedule_time_normalized = schedule_time.replace('：', ':').replace('～', '-').replace('~', '-').strip()
+                
+                if '-' in schedule_time_normalized:
+                    time_parts = schedule_time_normalized.split('-')
+                    start_time = time_parts[0].strip()
+                    end_time = time_parts[1].strip()
+                else:
+                    start_time = schedule_time_normalized.strip()
+                    # 終了時間を計算（1時間後）
+                    try:
+                        # コロンで分割して時間と分を取得
+                        if ':' in start_time:
+                            hour, minute = start_time.split(':')
+                            hour_int = int(hour)
+                            minute_int = int(minute) if minute else 0
+                        else:
+                            # コロンがない場合は時間のみ
+                            hour_int = int(start_time)
+                            minute_int = 0
+                            start_time = f"{hour_int:02d}:{minute_int:02d}"
+                        
+                        end_hour = hour_int + 1
+                        end_time = f"{end_hour:02d}:{minute_int:02d}"
+                    except Exception as e:
+                        print(f"⚠️ 時間解析エラー（update）: {e}, 時間: {start_time}, デフォルトで1時間後に設定")
+                        # エラー時は開始時間から1時間後を設定
+                        try:
+                            hour_int = int(start_time.split(':')[0]) if ':' in start_time else int(start_time)
+                            end_hour = hour_int + 1
+                            end_time = f"{end_hour:02d}:00"
+                        except:
+                            end_time = f"15:00"  # 最後のフォールバック
+                
+                # 各曜日ごとにスケジュールエントリを作成
+                for day_char in schedule_day:
+                    if day_char in day_mapping:
+                        day_of_week = day_mapping[day_char]
+                        try:
+                            cursor.execute('''
+                                INSERT INTO schedules 
+                                (staff_id, case_id, day_of_week, start_time, end_time, location, schedule_type, is_active)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (
+                                staff_id,
+                                case_id,
+                                day_of_week,
+                                start_time,
+                                end_time,
+                                location,
+                                'ケース',
+                                1
+                            ))
+                            print(f"✅ スケジュールエントリ更新: {day_of_week} {start_time}-{end_time}")
+                        except Exception as e:
+                            print(f"❌ スケジュールエントリ更新エラー: {e}")
+            
+            conn.commit()
+            print(f"✅ ケース情報を更新しました（ID: {case_id}）")
+        except Exception as e:
+            print(f"update_case_to_staff エラー: {e}")
+            import traceback
+            traceback.print_exc()
+            conn.rollback()
+        finally:
+            conn.close()
+        
+        return case_id
 
+    def sync_all_cases_to_schedule(self):
+        """既存のケースからスケジュールエントリを生成（スケジュールエントリがない場合）"""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        try:
+            # 全てのケースとその支援員を取得
+            cursor.execute('''
+                SELECT 
+                    c.id as case_id,
+                    c.schedule_day,
+                    c.schedule_time,
+                    c.location,
+                    sc.staff_id
+                FROM cases c
+                JOIN staff_cases sc ON c.id = sc.case_id
+                WHERE c.is_active = 1
+                  AND c.schedule_day IS NOT NULL 
+                  AND c.schedule_day != ''
+                  AND c.schedule_time IS NOT NULL 
+                  AND c.schedule_time != ''
+            ''')
+            
+            cases = cursor.fetchall()
+            created_count = 0
+            
+            # 曜日のマッピング
+            day_mapping = {
+                '月': '月',
+                '火': '火',
+                '水': '水',
+                '木': '木',
+                '金': '金'
+            }
+            
+            for case_id, schedule_day, schedule_time, location, staff_id in cases:
+                # 既にスケジュールエントリが存在するかチェック
+                cursor.execute('''
+                    SELECT COUNT(*) FROM schedules 
+                    WHERE case_id = ? AND is_active = 1
+                ''', (case_id,))
+                
+                if cursor.fetchone()[0] > 0:
+                    # 既にスケジュールエントリが存在する場合はスキップ
+                    continue
+                
+                # 時間の解析（全角コロンや波線を半角に変換）
+                schedule_time_normalized = schedule_time.replace('：', ':').replace('～', '-').replace('~', '-').strip()
+                
+                if '-' in schedule_time_normalized:
+                    time_parts = schedule_time_normalized.split('-')
+                    start_time = time_parts[0].strip()
+                    end_time = time_parts[1].strip()
+                else:
+                    start_time = schedule_time_normalized.strip()
+                    # 終了時間を計算（1時間後）
+                    try:
+                        # コロンで分割して時間と分を取得
+                        if ':' in start_time:
+                            hour, minute = start_time.split(':')
+                            hour_int = int(hour)
+                            minute_int = int(minute) if minute else 0
+                        else:
+                            # コロンがない場合は時間のみ
+                            hour_int = int(start_time)
+                            minute_int = 0
+                            start_time = f"{hour_int:02d}:{minute_int:02d}"
+                        
+                        end_hour = hour_int + 1
+                        end_time = f"{end_hour:02d}:{minute_int:02d}"
+                    except Exception as e:
+                        print(f"⚠️ 時間解析エラー（update）: {e}, 時間: {start_time}, デフォルトで1時間後に設定")
+                        # エラー時は開始時間から1時間後を設定
+                        try:
+                            hour_int = int(start_time.split(':')[0]) if ':' in start_time else int(start_time)
+                            end_hour = hour_int + 1
+                            end_time = f"{end_hour:02d}:00"
+                        except:
+                            end_time = f"15:00"  # 最後のフォールバック
+                
+                # 各曜日ごとにスケジュールエントリを作成
+                for day_char in schedule_day:
+                    if day_char in day_mapping:
+                        day_of_week = day_mapping[day_char]
+                        try:
+                            cursor.execute('''
+                                INSERT INTO schedules 
+                                (staff_id, case_id, day_of_week, start_time, end_time, location, schedule_type, is_active)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (
+                                staff_id,
+                                case_id,
+                                day_of_week,
+                                start_time,
+                                end_time,
+                                location,
+                                'ケース',
+                                1
+                            ))
+                            created_count += 1
+                        except Exception as e:
+                            print(f"❌ スケジュールエントリ作成エラー（ケースID: {case_id}）: {e}")
+            
+            conn.commit()
+            if created_count > 0:
+                print(f"✅ 既存ケースから{created_count}個のスケジュールエントリを作成しました")
+        except Exception as e:
+            print(f"sync_all_cases_to_schedule エラー: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            conn.close()
+    
     def get_weekly_schedule(self):
-        """週間スケジュールを取得"""
+        """週間スケジュールを取得（既存ケースからスケジュールエントリを自動生成）"""
+        # 既存ケースからスケジュールエントリを生成（初回のみ）
+        self.sync_all_cases_to_schedule()
+        
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
         
@@ -604,7 +1000,8 @@ class StaffManager:
                     s.id, s.day_of_week, s.start_time, s.end_time,
                     s.location, s.schedule_type, s.color_code,
                     staff.name as staff_name, c.case_number,
-                    d.name as district_name
+                    d.name as district_name, c.child_name, c.child_first_name,
+                    c.frequency
                 FROM schedules s
                 JOIN staff ON s.staff_id = staff.id
                 LEFT JOIN cases c ON s.case_id = c.id
@@ -615,6 +1012,52 @@ class StaffManager:
             
             columns = [desc[0] for desc in cursor.description]
             schedules = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            
+            # 開始時間と終了時間が同じスケジュールを修正（1時間の枠に設定）
+            updated_count = 0
+            for schedule in schedules:
+                start_time = schedule.get('start_time', '').replace('：', ':').replace('～', '-').replace('~', '-').strip()
+                end_time = schedule.get('end_time', '').replace('：', ':').replace('～', '-').replace('~', '-').strip()
+                
+                # 開始時間と終了時間が同じ場合は1時間後に修正
+                if start_time == end_time or not end_time:
+                    try:
+                        # 開始時間を解析（'-'が含まれている場合は削除）
+                        start_time_clean = start_time.replace('-', '').strip()
+                        if ':' in start_time_clean:
+                            parts = start_time_clean.split(':')
+                            hour = parts[0].strip()
+                            minute = parts[1].strip() if len(parts) > 1 else '0'
+                            hour_int = int(hour) if hour else 0
+                            minute_int = int(minute) if minute else 0
+                        else:
+                            hour_int = int(start_time_clean) if start_time_clean else 0
+                            minute_int = 0
+                            start_time = f"{hour_int:02d}:{minute_int:02d}"
+                        
+                        # 1時間後の終了時間を計算
+                        end_hour = hour_int + 1
+                        new_end_time = f"{end_hour:02d}:{minute_int:02d}"
+                        
+                        # データベースを更新
+                        schedule_id = schedule.get('id')
+                        cursor.execute('''
+                            UPDATE schedules 
+                            SET end_time = ?
+                            WHERE id = ?
+                        ''', (new_end_time, schedule_id))
+                        
+                        # メモリ内のデータも更新
+                        schedule['end_time'] = new_end_time
+                        updated_count += 1
+                        
+                    except Exception as e:
+                        print(f"⚠️ スケジュール修正エラー（ID: {schedule.get('id')}）: {e}")
+            
+            if updated_count > 0:
+                conn.commit()
+                print(f"✅ {updated_count}個のスケジュールエントリを1時間の枠に修正しました")
+            
         except Exception as e:
             print(f"get_weekly_schedule エラー: {e}")
             # テーブルが存在しない場合は空のリストを返す
