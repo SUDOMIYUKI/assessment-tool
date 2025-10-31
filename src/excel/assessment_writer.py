@@ -17,7 +17,7 @@ class AssessmentWriter:
     def __init__(self, template_path='templates/アセスメントシート原本.xlsx'):
         self.template_path = Path(template_path)
     
-    def create_assessment_file(self, interview_data, assessment_data, output_path):
+    def create_assessment_file(self, interview_data, assessment_data, output_path, password=None):
         """アセスメントシートExcelファイルを作成（Python版 - 書式完全保持）"""
         
         if not self.template_path.exists():
@@ -29,13 +29,14 @@ class AssessmentWriter:
         try:
             # Python スクリプトを直接実行
             print(f"📋 Python でファイルを生成中...")
-            # config.pyの設定からパスワードを取得
-            password = config.EXCEL_PASSWORD if config.EXCEL_PASSWORD else None
+            # 引数で渡されたパスワードを優先、なければconfig.pyの設定を使用
+            if password is None:
+                password = config.EXCEL_PASSWORD if config.EXCEL_PASSWORD else None
             result = generate_assessment_sheet(
                 template_path=str(self.template_path),
                 output_path=str(output_path),
                 data=data,
-                password=password  # config.pyで設定されたパスワードを使用
+                password=password  # ダイアログで入力されたパスワードまたはconfig.pyの設定を使用
             )
             
             if result['success']:
