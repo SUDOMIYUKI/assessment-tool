@@ -38,17 +38,26 @@ class StaffManager:
         ''')
         
         # 既存のテーブルに新しいカラムを追加（マイグレーション）
-        try:
-            cursor.execute('ALTER TABLE staff ADD COLUMN case_district TEXT')
-            cursor.execute('ALTER TABLE staff ADD COLUMN case_number TEXT')
-            cursor.execute('ALTER TABLE staff ADD COLUMN case_day TEXT')
-            cursor.execute('ALTER TABLE staff ADD COLUMN case_time TEXT')
-            cursor.execute('ALTER TABLE staff ADD COLUMN case_frequency TEXT')
-            cursor.execute('ALTER TABLE staff ADD COLUMN case_location TEXT')
-            cursor.execute('ALTER TABLE staff ADD COLUMN notes TEXT')
-        except sqlite3.OperationalError:
-            # カラムが既に存在する場合は無視
-            pass
+        migration_columns = [
+            ('case_district', 'TEXT'),
+            ('case_number', 'TEXT'),
+            ('case_day', 'TEXT'),
+            ('case_time', 'TEXT'),
+            ('case_frequency', 'TEXT'),
+            ('case_location', 'TEXT'),
+            ('notes', 'TEXT'),
+        ]
+
+        cursor.execute('PRAGMA table_info(staff)')
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        for column_name, column_type in migration_columns:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f'ALTER TABLE staff ADD COLUMN {column_name} {column_type}')
+                except sqlite3.OperationalError:
+                    # 競合やロック等で失敗した場合はログを出力して継続
+                    print(f"⚠️ カラム追加に失敗しました: {column_name}")
         
         # サンプルデータを挿入（初回のみ）
         cursor.execute('SELECT COUNT(*) FROM staff')
