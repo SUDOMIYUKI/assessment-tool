@@ -1,10 +1,21 @@
 import sqlite3
 from pathlib import Path
+import sys
+
+# config.pyからDATABASE_PATHを取得
+try:
+    import config
+    DEFAULT_DB_PATH = config.DATABASE_PATH
+except (ImportError, AttributeError):
+    # config.pyが読み込めない場合はデフォルトパスを使用
+    DEFAULT_DB_PATH = Path('data/records.db')
 
 class Database:
-    def __init__(self, db_path='data/records.db'):
+    def __init__(self, db_path=None):
+        if db_path is None:
+            db_path = DEFAULT_DB_PATH
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(exist_ok=True)
+        self.db_path.parent.mkdir(exist_ok=True, parents=True)
         self.init_database()
     
     def init_database(self):
