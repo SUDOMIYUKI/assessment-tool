@@ -70,7 +70,15 @@ else:
     if USE_DROPBOX:
         print("⚠️ Dropboxフォルダが見つかりません。ローカルに保存します。")
 
-DATABASE_PATH = USER_DIR / 'data' / 'records.db'
+# データベースパスの設定（Dropbox優先）
+if USE_DROPBOX and check_dropbox_available():
+    dropbox_path = get_dropbox_path()
+    DATABASE_PATH = dropbox_path / '不登校支援ツール' / 'data' / 'records.db'
+    print(f"✅ データベースをDropboxに保存します: {DATABASE_PATH}")
+else:
+    DATABASE_PATH = USER_DIR / 'data' / 'records.db'
+    if USE_DROPBOX:
+        print("⚠️ Dropboxフォルダが見つかりません。データベースはローカルに保存します。")
 
 # ディレクトリ作成
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -102,8 +110,23 @@ if not CLAUDE_API_KEY or CLAUDE_API_KEY == "ここにあなたのClaude APIキ�
 # アプリケーション設定
 # ============================================
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"  # データベースDropbox対応版
 APP_NAME = "不登校支援 - 初回アセスメント支援ツール"
+
+# 自動アップデート設定
+UPDATE_CHECK_ENABLED = True
+
+# Dropbox上に最新版のexeを置く場合のパス（自動検出）
+if USE_DROPBOX and check_dropbox_available():
+    dropbox_path = get_dropbox_path()
+    UPDATE_SOURCE_PATH = dropbox_path / '不登校支援ツール' / '最新版' / '不登校支援ツール.exe'
+    # フォルダが存在しない場合は作成
+    UPDATE_SOURCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    print(f"✅ 自動アップデートが有効です: {UPDATE_SOURCE_PATH}")
+else:
+    UPDATE_SOURCE_PATH = None
+    if USE_DROPBOX:
+        print("⚠️ Dropboxが見つかりません。自動アップデートは無効です。")
 
 # デバッグモード
 DEBUG = False
