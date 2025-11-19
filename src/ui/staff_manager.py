@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sqlite3
+from pathlib import Path
+import time
 from src.database.staff import StaffManager
 
 class StaffManagerDialog(tk.Toplevel):
@@ -14,6 +16,12 @@ class StaffManagerDialog(tk.Toplevel):
         self.selected_unassigned_case_data = None
         self.schedule_window = None  # スケジュールウィンドウの参照を保持
         
+        # 自動リフレッシュ用の変数
+        self.db_path = self.staff_manager.db_path
+        self.last_db_mtime = None
+        self.auto_refresh_enabled = True
+        self.refresh_interval = 5 * 60 * 1000  # 5分ごとにチェック（ミリ秒）
+        
         self.title("支援員管理")
         self.geometry("1200x700")
         self.transient(parent)
@@ -26,6 +34,15 @@ class StaffManagerDialog(tk.Toplevel):
         x = (self.winfo_screenwidth() // 2) - (self.winfo_width() // 2)
         y = (self.winfo_screenheight() // 2) - (self.winfo_height() // 2)
         self.geometry(f'+{x}+{y}')
+        
+        # 初期データベース更新日時を記録
+        self.update_db_mtime()
+        
+        # 自動リフレッシュを開始
+        self.start_auto_refresh()
+        
+        # ウィンドウが閉じられたときに自動リフレッシュを停止
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
     
     def create_widgets(self):
         # ヘッダー
@@ -824,6 +841,7 @@ class StaffManagerDialog(tk.Toplevel):
         
         # 初期データ読み込み
         self.refresh_staff_tree()
+        self.refresh_unassigned_tree()
 
     def refresh_staff_tree(self):
         """支援員一覧を更新"""
@@ -2499,3 +2517,58 @@ class StaffManagerDialog(tk.Toplevel):
             except Exception as e:
                 print(f"削除エラー: {e}")
                 messagebox.showerror("エラー", f"削除中にエラーが発生しました: {e}")
+    
+    def update_db_mtime(self):
+        """データベースファイルの更新日時を記録"""
+        try:
+            if self.db_path.exists():
+                self.last_db_mtime = self.db_path.stat().st_mtime
+        except Exception as e:
+            print(f"データベース更新日時取得エラー: {e}")
+    
+    def check_and_refresh(self):
+        """データベースの更新をチェックして、必要に応じてリフレッシュ"""
+        if not self.auto_refresh_enabled:
+            return
+        
+        try:
+            if self.db_path.exists():
+                current_mtime = self.db_path.stat().st_mtime
+                
+                # データベースが更新されていた場合
+                if self.last_db_mtime is not None and current_mtime > self.last_db_mtime:
+                    # 現在選択されている支援員IDを保持
+                    selected_id = self.selected_staff_id
+                    
+                    # データをリフレッシュ
+                    self.refresh_staff_tree()
+                    self.refresh_unassigned_tree()
+                    
+                    # ケース一覧も更新（支援員が選択されている場合）
+                    if selected_id:
+                        self.refresh_case_list()
+                    
+                    # 更新日時を更新
+                    self.last_db_mtime = current_mtime
+                    
+                    print("✅ データベースの変更を検出し、画面を更新しました")
+                else:
+                    # 更新日時を更新（初回のみ）
+                    if self.last_db_mtime is None:
+                        self.last_db_mtime = current_mtime
+        except Exception as e:
+            print(f"自動リフレッシュチェックエラー: {e}")
+        
+        # 次のチェックをスケジュール（5分後）
+        if self.auto_refresh_enabled:
+            self.after(self.refresh_interval, self.check_and_refresh)
+    
+    def start_auto_refresh(self):
+        """自動リフレッシュを開始"""
+        # 初回チェックは5分後
+        self.after(self.refresh_interval, self.check_and_refresh)
+    
+    def on_close(self):
+        """ウィンドウを閉じる際の処理"""
+        self.auto_refresh_enabled = False
+        self.destroy()
