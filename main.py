@@ -3,6 +3,8 @@ from tkinter import messagebox
 import sys
 from pathlib import Path
 import threading
+import time
+import os
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -17,10 +19,189 @@ class MainApplication(tk.Tk):
         self.title("不登校支援 - 初回アセスメント支援ツール")
         self.geometry("1000x800")
         
+        # Dropbox同期状態を確認
+        self.check_dropbox_sync()
+        
+        # バージョンチェック（起動時のみ、非同期）
+        if getattr(sys, 'frozen', False):  # 実行ファイルの場合のみ
+            threading.Thread(target=self.check_for_updates, daemon=True).start()
+        
         self.db = Database()
         self.history_manager = HistoryManager()
         
         self.create_widgets()
+    
+    def check_dropbox_sync(self):
+        """Dropboxの同期状態を確認"""
+        try:
+            import config
+            if not config.USE_DROPBOX:
+                return
+            
+            db_path = config.DATABASE_PATH
+            
+            # Dropboxフォルダ内かチェック
+            dropbox_path = config.get_dropbox_path()
+            if dropbox_path and str(db_path).startswith(str(dropbox_path)):
+                # データベースファイルが存在する場合、同期状態を確認
+                if db_path.exists():
+                    # ファイルの最終更新時刻を取得
+                    local_mtime = db_path.stat().st_mtime
+                    current_time = time.time()
+                    
+                    # 5分以内に更新されていれば同期中と判断
+                    if current_time - local_mtime < 300:
+                        # データベースがロックされていないか確認
+                        if self.is_database_locked(db_path):
+                            messagebox.showwarning(
+                                "データベースロック",
+                                "データベースが他のPCで使用中の可能性があります。\n"
+                                "しばらく待ってから再度お試しください。"
+                            )
+                else:
+                    # データベースが存在しない場合は新規作成
+                    db_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            print(f"Dropbox同期チェックエラー: {e}")
+    
+    def is_database_locked(self, db_path):
+        """データベースがロックされているか確認"""
+        try:
+            import sqlite3
+            # 読み取り専用で接続を試みる
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=1.0)
+            conn.close()
+            return False
+        except sqlite3.OperationalError:
+            return True
+        except Exception:
+            return False
+    
+    def check_for_updates(self):
+        """更新をチェック（非同期）"""
+        try:
+            import config
+            if not config.UPDATE_CHECK_ENABLED or not config.UPDATE_SOURCE_PATH:
+                return
+            
+            update_path = config.UPDATE_SOURCE_PATH
+            if update_path and update_path.exists():
+                # 更新ファイルの更新日時を確認
+                update_mtime = update_path.stat().st_mtime
+                current_exe = Path(sys.executable)
+                
+                if current_exe.exists():
+                    current_mtime = current_exe.stat().st_mtime
+                    
+                    # 更新日時が新しい、またはファイルサイズが異なる場合は更新ありと判断
+                    update_size = update_path.stat().st_size
+                    current_size = current_exe.stat().st_size
+                    
+                    if (update_mtime > current_mtime) or (update_size != current_size):
+                        # 少し待ってから通知（起動直後の処理が落ち着いてから）
+                        import time
+                        time.sleep(3)
+                        # 更新があることを通知（メインスレッドで実行）
+                        self.after(0, lambda: self.show_update_notification(update_path))
+        except Exception as e:
+            print(f"更新チェックエラー: {e}")
+    
+    def show_update_notification(self, update_path):
+        """更新通知を表示"""
+        try:
+            import config
+            version_info = f"Version {config.APP_VERSION}"
+        except:
+            version_info = ""
+        
+        result = messagebox.askyesno(
+            "更新のお知らせ",
+            f"新しいバージョンが利用可能です。\n\n"
+            f"{version_info}\n\n"
+            f"更新ファイル: {update_path.name}\n\n"
+            "今すぐ更新しますか？\n"
+            "（アプリを終了し、自動的に更新されます）"
+        )
+        if result:
+            self.perform_update(update_path)
+    
+    def perform_update(self, update_path):
+        """更新を実行"""
+        import subprocess
+        import shutil
+        import tempfile
+        
+        try:
+            current_exe = Path(sys.executable)
+            exe_dir = current_exe.parent
+            exe_name = current_exe.name
+            
+            # バックアップパス
+            backup_path = exe_dir / f"{current_exe.stem}_old{current_exe.suffix}"
+            
+            # 一時バッチファイルを作成
+            temp_dir = Path(tempfile.gettempdir())
+            batch_file = temp_dir / "update_app.bat"
+            
+            # バッチファイルの内容
+            batch_content = f"""@echo off
+chcp 65001 > nul
+echo 更新を実行しています...
+timeout /t 2 /nobreak > nul
+
+REM 現在のexeをバックアップ
+if exist "{current_exe}" (
+    if exist "{backup_path}" del /f /q "{backup_path}"
+    copy /y "{current_exe}" "{backup_path}" > nul
+)
+
+REM 更新ファイルをコピー
+copy /y "{update_path}" "{current_exe}" > nul
+
+if exist "{current_exe}" (
+    echo 更新が完了しました。
+    echo アプリを起動します...
+    timeout /t 1 /nobreak > nul
+    start "" "{current_exe}"
+    
+    REM バッチファイルを削除
+    del /f /q "%~f0"
+) else (
+    echo 更新に失敗しました。バックアップから復元します...
+    if exist "{backup_path}" (
+        copy /y "{backup_path}" "{current_exe}" > nul
+    )
+    pause
+    del /f /q "%~f0"
+)
+"""
+            
+            # バッチファイルを作成
+            with open(batch_file, 'w', encoding='utf-8') as f:
+                f.write(batch_content)
+            
+            # バッチファイルを実行（非同期）
+            subprocess.Popen(
+                [str(batch_file)],
+                shell=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            )
+            
+            messagebox.showinfo(
+                "更新を開始します",
+                "アプリを終了して更新を実行します。\n\n"
+                "更新が完了すると、自動的にアプリが再起動されます。"
+            )
+            
+            # アプリを終了
+            self.quit()
+            
+        except Exception as e:
+            messagebox.showerror(
+                "更新エラー",
+                f"更新の準備中にエラーが発生しました：\n{str(e)}\n\n"
+                f"手動で更新してください：\n{update_path}"
+            )
     
     def create_widgets(self):
         menubar = tk.Menu(self)
@@ -244,9 +425,20 @@ class MainApplication(tk.Tk):
 
     def show_about(self):
         """バージョン情報を表示"""
-        about_text = """
+        try:
+            import config
+            version = config.APP_VERSION
+        except:
+            version = "1.1.0"
+        
+        about_text = f"""
 不登校支援 - 初回アセスメント支援ツール
-Version 1.0
+Version {version}
+
+【主な機能】
+・データベースをDropboxで共有
+・自動マイグレーション対応
+・起動時に同期状態を確認
 
 美幸AIスクール
         """
